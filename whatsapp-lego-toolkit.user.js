@@ -2304,7 +2304,7 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Google Sheets Sync (v1)
+   BLOCK: Google Sheets Sync (v2)
    ============================================================ */
 LegoCore.registerBlock({
   id: 'sheetsSyncModule',
@@ -2348,6 +2348,14 @@ LegoCore.registerBlock({
         });
       });
     }
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read the file.'));
+        reader.readAsText(file, 'utf-8');
+      });
+    }
     function dataURLtoBlob(dataUrl) {
       const [meta, base64] = dataUrl.split(',');
       const mime = (meta.match(/:(.*?);/) || [, 'image/jpeg'])[1];
@@ -2355,6 +2363,90 @@ LegoCore.registerBlock({
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       return new Blob([arr], { type: mime });
+    }
+
+    // Shared by BOTH the Google Sheets import and the manual CSV import.
+    // Parses csvText, rebuilds the text + image libraries, and overwrites
+    // localStorage. Throws on any parsing/validation problem.
+    function importCsvTextAndOverwrite(csvText) {
+      if (csvText.includes('<html') && (csvText.includes('sign in') || csvText.includes('ServiceLogin'))) {
+        throw new Error("Sheet is private. Change sharing settings to 'Anyone with the link can view'.");
+      }
+      const rows = parseCSV(csvText);
+      if (rows.length < 2) throw new Error('CSV appears empty or invalid.');
+
+      const newTextLib = { items: [], tags: [] };
+      const newImageLib = { items: [], tags: [] };
+      const textFolderMap = {}, imageFolderMap = {}, tagMap = {}, imageNameMap = {};
+      const palette = ['#25d366', '#0284c7', '#f77f00', '#9d0208', '#7209b7', '#10b981', '#f43f5e'];
+      let tagColorIndex = 0;
+
+      const db = core.getDb();
+      function storeImageBlob(id, dataUrl) {
+        if (!db) return;
+        const blob = dataURLtoBlob(dataUrl);
+        const tx = db.transaction(['images'], 'readwrite');
+        tx.objectStore('images').put({ id, blob, order: Date.now() });
+      }
+
+      function ensureImage(name, group, dataUrl, rowIndex) {
+        if (!name || !dataUrl) return '';
+        if (imageNameMap[name]) return imageNameMap[name];
+        if (!imageFolderMap[group]) {
+          const fid = 'ifld_' + Date.now() + '_' + rowIndex;
+          imageFolderMap[group] = fid;
+          newImageLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: rowIndex });
+        }
+        const id = 'img_' + Date.now() + '_' + rowIndex;
+        newImageLib.items.push({ id, type: 'image', parentId: imageFolderMap[group], name, thumbnail: dataUrl, tags: [], order: rowIndex });
+        storeImageBlob(id, dataUrl);
+        imageNameMap[name] = id;
+        return id;
+      }
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length < 2 || !row[1] || !row[1].trim()) continue;
+        const type = (row[0] || 'snippet').trim().toLowerCase();
+        const name = row[1].trim();
+        const group = (row[2] || '').trim() || 'General';
+        const tagsRaw = (row[3] || '').trim();
+        const command = (row[4] || '').trim();
+        const text = row[5] || '';
+        const imageName = (row[6] || '').trim();
+        const imageData = row[7] || '';
+
+        if (type === 'image') {
+          ensureImage(name, group, imageData, i);
+          continue;
+        }
+
+        if (!textFolderMap[group]) {
+          const fid = 'fld_' + Date.now() + '_' + i;
+          textFolderMap[group] = fid;
+          newTextLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: i });
+        }
+        const tagIds = [];
+        if (tagsRaw) {
+          tagsRaw.split('|').map(t => t.trim()).filter(Boolean).forEach(tName => {
+            if (!tagMap[tName]) {
+              const tid = 'tag_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+              tagMap[tName] = tid;
+              newTextLib.tags.push({ id: tid, name: tName, color: palette[tagColorIndex % palette.length] });
+              tagColorIndex++;
+            }
+            tagIds.push(tagMap[tName]);
+          });
+        }
+        const linkedImageId = imageName && imageData ? ensureImage(imageName, group, imageData, i) : '';
+        newTextLib.items.push({
+          id: 'snip_' + Date.now() + '_' + i, type: 'snippet', parentId: textFolderMap[group],
+          title: name, text, tags: tagIds, customCommand: command, imageId: linkedImageId, order: i
+        });
+      }
+
+      localStorage.setItem(TEXT_KEY, JSON.stringify(newTextLib));
+      localStorage.setItem(IMAGE_KEY, JSON.stringify(newImageLib));
     }
 
     function openSyncModal() {
@@ -2374,6 +2466,12 @@ LegoCore.registerBlock({
             <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">2. Restore from a public Google Sheets URL.<br><span style="color:#f43f5e; font-weight:bold;">⚠️ This overwrites both libraries!</span></div>
             <input type="text" id="wa-sync-import-url" class="wa-tlp-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit" value="${savedUrl}" style="margin-bottom:8px;">
             <button id="wa-sync-import-btn" class="wa-base-btn" style="background:#dc2626;">📥 Overwrite &amp; Import</button>
+          </div>
+          <div style="background:rgba(244,63,94,0.05); border:1px solid rgba(244,63,94,0.2); padding:10px; border-radius:6px;">
+            <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">3. Or restore from a local CSV file (upload or paste).<br><span style="color:#f43f5e; font-weight:bold;">⚠️ This overwrites both libraries!</span></div>
+            <input type="file" id="wa-sync-import-file" accept=".csv,text/csv" style="width:100%; font-size:11px; margin-bottom:8px; box-sizing:border-box;">
+            <textarea id="wa-sync-import-paste" class="wa-tlp-input" rows="4" placeholder="...or paste the CSV contents here" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:10.5px; margin-bottom:8px; resize:vertical;"></textarea>
+            <button id="wa-sync-import-csv-btn" class="wa-base-btn" style="background:#dc2626;">📥 Overwrite &amp; Import CSV</button>
           </div>
           <button id="wa-sync-close-btn" class="wa-hide-btn">Close</button>
         </div>
@@ -2431,90 +2529,46 @@ LegoCore.registerBlock({
 
         try {
           const csvText = await gmFetchText(fetchUrl);
-          if (csvText.includes('<html') && (csvText.includes('sign in') || csvText.includes('ServiceLogin'))) {
-            throw new Error("Sheet is private. Change sharing settings to 'Anyone with the link can view'.");
-          }
-          const rows = parseCSV(csvText);
-          if (rows.length < 2) throw new Error('Sheet appears empty or invalid.');
-
-          const newTextLib = { items: [], tags: [] };
-          const newImageLib = { items: [], tags: [] };
-          const textFolderMap = {}, imageFolderMap = {}, tagMap = {}, imageNameMap = {};
-          const palette = ['#25d366', '#0284c7', '#f77f00', '#9d0208', '#7209b7', '#10b981', '#f43f5e'];
-          let tagColorIndex = 0;
-
-          const db = core.getDb();
-          function storeImageBlob(id, dataUrl) {
-            if (!db) return;
-            const blob = dataURLtoBlob(dataUrl);
-            const tx = db.transaction(['images'], 'readwrite');
-            tx.objectStore('images').put({ id, blob, order: Date.now() });
-          }
-
-          function ensureImage(name, group, dataUrl, rowIndex) {
-            if (!name || !dataUrl) return '';
-            if (imageNameMap[name]) return imageNameMap[name];
-            if (!imageFolderMap[group]) {
-              const fid = 'ifld_' + Date.now() + '_' + rowIndex;
-              imageFolderMap[group] = fid;
-              newImageLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: rowIndex });
-            }
-            const id = 'img_' + Date.now() + '_' + rowIndex;
-            newImageLib.items.push({ id, type: 'image', parentId: imageFolderMap[group], name, thumbnail: dataUrl, tags: [], order: rowIndex });
-            storeImageBlob(id, dataUrl);
-            imageNameMap[name] = id;
-            return id;
-          }
-
-          for (let i = 1; i < rows.length; i++) {
-            const row = rows[i];
-            if (!row || row.length < 2 || !row[1] || !row[1].trim()) continue;
-            const type = (row[0] || 'snippet').trim().toLowerCase();
-            const name = row[1].trim();
-            const group = (row[2] || '').trim() || 'General';
-            const tagsRaw = (row[3] || '').trim();
-            const command = (row[4] || '').trim();
-            const text = row[5] || '';
-            const imageName = (row[6] || '').trim();
-            const imageData = row[7] || '';
-
-            if (type === 'image') {
-              ensureImage(name, group, imageData, i);
-              continue;
-            }
-
-            if (!textFolderMap[group]) {
-              const fid = 'fld_' + Date.now() + '_' + i;
-              textFolderMap[group] = fid;
-              newTextLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: i });
-            }
-            const tagIds = [];
-            if (tagsRaw) {
-              tagsRaw.split('|').map(t => t.trim()).filter(Boolean).forEach(tName => {
-                if (!tagMap[tName]) {
-                  const tid = 'tag_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-                  tagMap[tName] = tid;
-                  newTextLib.tags.push({ id: tid, name: tName, color: palette[tagColorIndex % palette.length] });
-                  tagColorIndex++;
-                }
-                tagIds.push(tagMap[tName]);
-              });
-            }
-            const linkedImageId = imageName && imageData ? ensureImage(imageName, group, imageData, i) : '';
-            newTextLib.items.push({
-              id: 'snip_' + Date.now() + '_' + i, type: 'snippet', parentId: textFolderMap[group],
-              title: name, text, tags: tagIds, customCommand: command, imageId: linkedImageId, order: i
-            });
-          }
-
-          localStorage.setItem(TEXT_KEY, JSON.stringify(newTextLib));
-          localStorage.setItem(IMAGE_KEY, JSON.stringify(newImageLib));
+          importCsvTextAndOverwrite(csvText);
           alert('✅ Import successful! Reloading page to apply changes.');
           window.location.reload();
         } catch (err) {
           console.error(err);
           alert('Import failed: ' + err.message + "\n\nEnsure Google Sheet sharing is set to 'Anyone with the link can view'.");
           btn.innerText = '📥 Overwrite & Import'; btn.disabled = false;
+        }
+      };
+
+      // Uploading a file auto-fills the paste box (so it can be double-checked)
+      // but does NOT auto-import -- the user still clicks "Overwrite & Import CSV".
+      overlay.querySelector('#wa-sync-import-file').addEventListener('change', async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        try {
+          const text = await readFileAsText(file);
+          overlay.querySelector('#wa-sync-import-paste').value = text;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      overlay.querySelector('#wa-sync-import-csv-btn').onclick = async () => {
+        const csvText = overlay.querySelector('#wa-sync-import-paste').value;
+        if (!csvText || !csvText.trim()) return alert('Upload a .csv file or paste the CSV contents first.');
+
+        if (!confirm('⚠️ WARNING: This will permanently DELETE and OVERWRITE your Saved Messages AND Saved Images with the data from this CSV. Are you absolutely sure?')) return;
+
+        const btn = overlay.querySelector('#wa-sync-import-csv-btn');
+        btn.innerText = '⏳ Importing...'; btn.disabled = true;
+
+        try {
+          importCsvTextAndOverwrite(csvText);
+          alert('✅ Import successful! Reloading page to apply changes.');
+          window.location.reload();
+        } catch (err) {
+          console.error(err);
+          alert('Import failed: ' + err.message);
+          btn.innerText = '📥 Overwrite & Import CSV'; btn.disabled = false;
         }
       };
 
@@ -3885,15 +3939,24 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Dashboard Export (v2)
+   BLOCK: Dashboard Export (v3)
    ============================================================ */
 /* ============================================================
-   BLOCK 3: Contact Tag Dashboard, Export & Import (v2)
+   BLOCK 3: Contact Tag Dashboard, Export & Import (v3)
    ------------------------------------------------------------
    Standalone plugin -- reads the SAME "wa_tag_fields_v1" config
    as Blocks 1 and 2, fresh from localStorage on each action.
 
-   v2 additions:
+   v3 additions (on top of v2):
+   3) "Importar CSV manual" -- lets you either paste CSV text
+      directly into a textarea, or upload a .csv file from disk,
+      and generates the same ready-to-copy tagged name strings
+      as the Google Sheets import. Useful when the spreadsheet
+      isn't public, or you just have a local export. Shares the
+      exact same header-matching + results/copy UI as the
+      Google Sheets import.
+
+   v2 additions (unchanged):
    1) "Exportar a Excel (.xlsx)" -- a real Excel file, not just
       CSV. This needs the SheetJS library loaded globally as
       `XLSX`. Add this line to your Tampermonkey script's header
@@ -4001,6 +4064,7 @@ LegoCore.registerBlock({
         .wa-tag-dash-btn-ghost { background:rgba(255,255,255,.06); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); }
         .wa-tag-dash-row { display:flex; gap:6px; flex-wrap:wrap; }
         .wa-tag-dash-input, .wa-tag-dash-select { background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:5px 7px; font-size:10.5px; outline:none; }
+        .wa-tag-dash-textarea { background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 7px; font-size:10px; outline:none; font-family:monospace; resize:vertical; width:100%; box-sizing:border-box; }
         .wa-tag-dash-status { font-size:10px; color:var(--igls-text-dim,#96949c); }
         .wa-tag-dash-table-wrap { max-height:340px; overflow:auto; border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; }
         .wa-tag-dash-table { width:100%; border-collapse:collapse; font-size:10.5px; }
@@ -4013,6 +4077,11 @@ LegoCore.registerBlock({
         .wa-tag-dash-import-row { display:flex; flex-direction:column; gap:5px; background:rgba(255,255,255,.03); border:1px solid var(--igls-border,rgba(255,255,255,.06)); border-radius:6px; padding:6px; font-size:10px; }
         .wa-tag-dash-import-generated { font-family:monospace; font-size:9.5px; word-break:break-word; flex:1; }
         .wa-tag-dash-import-copybtn { flex-shrink:0; }
+        .wa-tag-dash-subtabs { display:flex; gap:4px; margin-bottom:6px; }
+        .wa-tag-dash-subtab { flex:1; text-align:center; padding:5px 6px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer; background:rgba(255,255,255,.04); color:var(--igls-text-dim,#96949c); border:1px solid var(--igls-border,rgba(255,255,255,.06)); }
+        .wa-tag-dash-subtab.active { background:var(--igls-accent,#c9a876); color:#171208; }
+        .wa-tag-dash-subpanel { display:none; flex-direction:column; gap:6px; }
+        .wa-tag-dash-subpanel.active { display:flex; }
       `;
       document.head.appendChild(style);
     }
@@ -4041,12 +4110,31 @@ LegoCore.registerBlock({
       </div>
 
       <div class="wa-tag-dash-divider">
-        <label class="wa-tag-dash-status" style="display:block; margin-bottom:4px;">Importar desde Google Sheets (link público)</label>
-        <div class="wa-tag-dash-row">
-          <input type="text" id="wa-tag-dash-sheet-url" class="wa-tag-dash-input" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1;">
-          <button id="wa-tag-dash-sheet-fetch-btn" class="wa-tag-dash-btn">Importar</button>
+        <label class="wa-tag-dash-status" style="display:block; margin-bottom:6px;">Importar datos (genera nombres etiquetados para copiar)</label>
+
+        <div class="wa-tag-dash-subtabs">
+          <div class="wa-tag-dash-subtab active" data-subtab="sheets">Google Sheets</div>
+          <div class="wa-tag-dash-subtab" data-subtab="csv">CSV manual</div>
         </div>
-        <div class="wa-tag-dash-status" id="wa-tag-dash-import-status" style="margin-top:4px;">El encabezado de la hoja debe usar las mismas etiquetas de tus campos (Nombre, Curso, Generación...).</div>
+
+        <div class="wa-tag-dash-subpanel active" id="wa-tag-dash-subpanel-sheets">
+          <div class="wa-tag-dash-row">
+            <input type="text" id="wa-tag-dash-sheet-url" class="wa-tag-dash-input" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1;">
+            <button id="wa-tag-dash-sheet-fetch-btn" class="wa-tag-dash-btn">Importar</button>
+          </div>
+        </div>
+
+        <div class="wa-tag-dash-subpanel" id="wa-tag-dash-subpanel-csv">
+          <div class="wa-tag-dash-row">
+            <input type="file" id="wa-tag-dash-csv-file" accept=".csv,text/csv" style="flex:1; font-size:10px;">
+          </div>
+          <textarea id="wa-tag-dash-csv-paste" class="wa-tag-dash-textarea" rows="4" placeholder="...o pega aquí el contenido CSV (primera fila = encabezados: Nombre, Curso, Generación, ...)"></textarea>
+          <div class="wa-tag-dash-row">
+            <button id="wa-tag-dash-csv-import-btn" class="wa-tag-dash-btn">Importar CSV</button>
+          </div>
+        </div>
+
+        <div class="wa-tag-dash-status" id="wa-tag-dash-import-status" style="margin-top:6px;">El encabezado debe usar las mismas etiquetas de tus campos (Nombre, Curso, Generación...).</div>
         <div id="wa-tag-dash-import-results" style="display:flex; flex-direction:column; gap:5px; margin-top:6px; max-height:240px; overflow:auto;"></div>
         <div class="wa-tag-dash-row" id="wa-tag-dash-import-copyall-row" style="display:none; margin-top:4px;">
           <button id="wa-tag-dash-import-copyall-btn" class="wa-tag-dash-btn wa-tag-dash-btn-ghost">📋 Copiar todos los nombres generados</button>
@@ -4056,6 +4144,16 @@ LegoCore.registerBlock({
 
     const statusEl = () => wrap.querySelector('#wa-tag-dash-status');
     const importStatusEl = () => wrap.querySelector('#wa-tag-dash-import-status');
+
+    // ---------------- Import sub-tabs (Google Sheets / CSV manual) ----------------
+    wrap.querySelectorAll('.wa-tag-dash-subtab').forEach(tab => {
+      tab.onclick = () => {
+        wrap.querySelectorAll('.wa-tag-dash-subtab').forEach(t => t.classList.remove('active'));
+        wrap.querySelectorAll('.wa-tag-dash-subpanel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        wrap.querySelector(`#wa-tag-dash-subpanel-${tab.dataset.subtab}`).classList.add('active');
+      };
+    });
 
     // ---------------- Scan (auto-scroll + collect) ----------------
     async function collectAllTaggedContacts() {
@@ -4276,6 +4374,81 @@ LegoCore.registerBlock({
       XLSX.writeFile(wb, `contactos_etiquetados_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
+    // ---------------- Shared CSV parsing ----------------
+    function parseCsv(text) {
+      const rows = [];
+      let row = [], field = '', inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i + 1] === '"') { field += '"'; i++; }
+            else inQuotes = false;
+          } else field += c;
+        } else {
+          if (c === '"') inQuotes = true;
+          else if (c === ',') { row.push(field); field = ''; }
+          else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+          else if (c === '\r') { /* skip */ }
+          else field += c;
+        }
+      }
+      if (field.length || row.length) { row.push(field); rows.push(row); }
+      return rows.filter(r => r.some(cell => cell.trim() !== ''));
+    }
+
+    // Shared by BOTH the Google Sheets import and the manual CSV import.
+    // Takes raw CSV text, matches header row to configured field labels,
+    // fills importedRows + renders the results/copy UI. Returns true on success.
+    function processImportedCsvText(csvText, sourceLabel) {
+      const resultsEl = wrap.querySelector('#wa-tag-dash-import-results');
+      const copyAllRow = wrap.querySelector('#wa-tag-dash-import-copyall-row');
+      resultsEl.innerHTML = '';
+      copyAllRow.style.display = 'none';
+      importedRows = [];
+
+      const rows = parseCsv(csvText);
+      if (rows.length < 2) { importStatusEl().textContent = `${sourceLabel}: no se encontraron filas de datos.`; return false; }
+
+      const header = rows[0].map(h => h.trim().toLowerCase());
+      const fields = getFields();
+      const nameColIdx = header.findIndex(h => h === 'nombre' || h === 'name');
+      if (nameColIdx === -1) {
+        importStatusEl().textContent = `${sourceLabel}: falta una columna "Nombre".`;
+        return false;
+      }
+      const fieldColIdx = {};
+      fields.forEach(f => {
+        const idx = header.findIndex(h => h === f.label.trim().toLowerCase());
+        if (idx !== -1) fieldColIdx[f.key] = idx;
+      });
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const baseName = (r[nameColIdx] || '').trim();
+        if (!baseName) continue;
+        const values = {};
+        fields.forEach(f => {
+          if (fieldColIdx[f.key] !== undefined) {
+            const v = (r[fieldColIdx[f.key]] || '').trim();
+            if (v) values[f.key] = v;
+          }
+        });
+        const generated = buildFullName(baseName, values, fields);
+        importedRows.push({ baseName, values, generated });
+      }
+
+      if (!importedRows.length) {
+        importStatusEl().textContent = `${sourceLabel}: no se encontraron filas válidas (revisa la columna Nombre).`;
+        return false;
+      }
+
+      importStatusEl().textContent = `${sourceLabel}: ${importedRows.length} filas listas. Copia cada nombre generado y pégalo en el contacto correspondiente en tu teléfono.`;
+      renderImportResults();
+      copyAllRow.style.display = '';
+      return true;
+    }
+
     // ---------------- Google Sheets import (bulk name generator) ----------------
     function extractSheetExportUrl(shareUrl) {
       const idMatch = shareUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -4304,36 +4477,8 @@ LegoCore.registerBlock({
       });
     }
 
-    function parseCsv(text) {
-      const rows = [];
-      let row = [], field = '', inQuotes = false;
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (inQuotes) {
-          if (c === '"') {
-            if (text[i + 1] === '"') { field += '"'; i++; }
-            else inQuotes = false;
-          } else field += c;
-        } else {
-          if (c === '"') inQuotes = true;
-          else if (c === ',') { row.push(field); field = ''; }
-          else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-          else if (c === '\r') { /* skip */ }
-          else field += c;
-        }
-      }
-      if (field.length || row.length) { row.push(field); rows.push(row); }
-      return rows.filter(r => r.some(cell => cell.trim() !== ''));
-    }
-
     wrap.querySelector('#wa-tag-dash-sheet-fetch-btn').onclick = async () => {
       const url = wrap.querySelector('#wa-tag-dash-sheet-url').value.trim();
-      const resultsEl = wrap.querySelector('#wa-tag-dash-import-results');
-      const copyAllRow = wrap.querySelector('#wa-tag-dash-import-copyall-row');
-      resultsEl.innerHTML = '';
-      copyAllRow.style.display = 'none';
-      importedRows = [];
-
       if (!url) { importStatusEl().textContent = 'Pega primero un link de Google Sheets.'; return; }
       const exportUrl = extractSheetExportUrl(url);
       if (!exportUrl) { importStatusEl().textContent = 'No se pudo leer el ID de la hoja en ese link.'; return; }
@@ -4347,47 +4492,43 @@ LegoCore.registerBlock({
         return;
       }
 
-      const rows = parseCsv(csvText);
-      if (rows.length < 2) { importStatusEl().textContent = 'La hoja no tiene filas de datos.'; return; }
-
-      const header = rows[0].map(h => h.trim().toLowerCase());
-      const fields = getFields();
-      const nameColIdx = header.findIndex(h => h === 'nombre' || h === 'name');
-      if (nameColIdx === -1) {
-        importStatusEl().textContent = 'La hoja necesita una columna "Nombre".';
-        return;
-      }
-      const fieldColIdx = {};
-      fields.forEach(f => {
-        const idx = header.findIndex(h => h === f.label.trim().toLowerCase());
-        if (idx !== -1) fieldColIdx[f.key] = idx;
-      });
-
-      for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        const baseName = (r[nameColIdx] || '').trim();
-        if (!baseName) continue;
-        const values = {};
-        fields.forEach(f => {
-          if (fieldColIdx[f.key] !== undefined) {
-            const v = (r[fieldColIdx[f.key]] || '').trim();
-            if (v) values[f.key] = v;
-          }
-        });
-        const generated = buildFullName(baseName, values, fields);
-        importedRows.push({ baseName, values, generated });
-      }
-
-      if (!importedRows.length) {
-        importStatusEl().textContent = 'No se encontraron filas válidas (revisa la columna Nombre).';
-        return;
-      }
-
-      importStatusEl().textContent = `${importedRows.length} filas listas. Copia cada nombre generado y pégalo en el contacto correspondiente en tu teléfono.`;
-      renderImportResults();
-      copyAllRow.style.display = '';
+      processImportedCsvText(csvText, 'Google Sheets');
     };
 
+    // ---------------- Manual CSV import (upload file or paste text) ----------------
+    function readFileAsText(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+        reader.readAsText(file, 'utf-8');
+      });
+    }
+
+    // Uploading a file auto-fills the paste box (handy to double check) but
+    // does NOT auto-import -- the user still clicks "Importar CSV".
+    wrap.querySelector('#wa-tag-dash-csv-file').addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const text = await readFileAsText(file);
+        wrap.querySelector('#wa-tag-dash-csv-paste').value = text;
+        importStatusEl().textContent = `Archivo "${file.name}" cargado. Revisa el texto y presiona "Importar CSV".`;
+      } catch (err) {
+        importStatusEl().textContent = err.message;
+      }
+    });
+
+    wrap.querySelector('#wa-tag-dash-csv-import-btn').onclick = () => {
+      const csvText = wrap.querySelector('#wa-tag-dash-csv-paste').value;
+      if (!csvText || !csvText.trim()) {
+        importStatusEl().textContent = 'Sube un archivo .csv o pega el contenido CSV primero.';
+        return;
+      }
+      processImportedCsvText(csvText, 'CSV manual');
+    };
+
+    // ---------------- Import results rendering (shared) ----------------
     function renderImportResults() {
       const resultsEl = wrap.querySelector('#wa-tag-dash-import-results');
       resultsEl.innerHTML = '';
