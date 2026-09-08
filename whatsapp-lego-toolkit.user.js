@@ -2930,57 +2930,16 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Contact Tag Editor (v3)
+   BLOCK: Contact Tag Editor (v4)
    ============================================================ */
 /* ============================================================
-   BLOCK 1: Contact Tag Editor (v3)
+   BLOCK 1: Contact Tag Editor (v3.1)
    ------------------------------------------------------------
    Standalone plugin -- no dependency on any other block.
    Mounts its own card into the Dual Sidebar via core.registerMenu.
 
-   v3 changes (replaces the standalone Dashboard block entirely --
-   that block should be REMOVED from your Node Builder block list,
-   not just left unused):
-
-   1) TWO VIEWS instead of one long scroll: a small tab bar at the
-      top switches between "Generar nombre" (the paste/form/preview
-      flow for one contact) and "Configurar campos" (the field
-      schema editor) -- so tweaking a course color doesn't require
-      scrolling past the whole generator, and vice versa.
-
-   2) LIST-TYPE FIELDS (Curso, etc.) now edit as individual rows --
-      swatch, name, delete (✕) per option, plus a single
-      "+ Agregar opción" box -- instead of retyping one long
-      comma-separated string to change a single course name.
-
-   3) FIELD-CONFIG EXPORT/IMPORT (schema, not contact data) --
-      lives in the "Configurar campos" view:
-      - "Exportar a Excel (.xlsx)": one row PER FIELD (Clave,
-        Etiqueta, Tipo, Opciones, Colores, ColorPorDefecto, Oculto,
-        Miles) -- your whole field setup as a spreadsheet, meant to
-        be uploaded into Google Sheets for easier bulk editing.
-      - "Importar desde Google Sheets": paste the sheet's public
-        share link back in, and it REPLACES your entire field
-        config -- a confirm dialog shows exactly how many fields
-        will be replaced before anything is overwritten.
-      Needs the same three lines in your Tampermonkey header you
-      already added for the old Dashboard block:
-        // @grant        GM_xmlhttpRequest
-        // @connect      docs.google.com
-        // @require      https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
-
-   WHAT THIS BLOCK DOES (unchanged core behavior)
-   - Lets you define fields -- key, label, input type, color (or
-     per-option colors for Lista fields), hidden flag, thousands
-     flag -- and generates/edits WhatsApp contact name strings in
-     the format: BaseName [KEY:value] [KEY:value] ...
-   - Paste an existing tagged name to auto-fill the form; unknown
-     tag keys are preserved as removable chips, never dropped.
-
-   SHARED CONTRACT WITH BLOCK 2
-   - localStorage key "wa_tag_fields_v1" holds the field
-     definitions as JSON. This block is the only one that WRITES
-     to it. Block 2 (Badge Renderer) only READS it.
+   Novedades:
+   - Importación manual de archivos CSV locales (sin requerir Google Sheets).
    ============================================================ */
 LegoCore.registerBlock({
   id: 'contactTagEditorPlugin',
@@ -3036,7 +2995,7 @@ LegoCore.registerBlock({
       return parts.join(' ');
     }
 
-    // ---------------- Generic CSV parser (for Sheets import) ----------------
+    // ---------------- Generic CSV parser (for Sheets / Manual import) ----------------
     function parseCsv(text) {
       const rows = [];
       let row = [], field = '', inQuotes = false;
@@ -3084,6 +3043,67 @@ LegoCore.registerBlock({
           onerror: () => reject(new Error('Error de red al descargar la hoja.'))
         });
       });
+    }
+
+    function applyCsvRows(rows) {
+      if (rows.length < 2) { setConfigStatus('El CSV no tiene filas de datos.'); return false; }
+
+      const header = rows[0].map(h => h.trim().toLowerCase());
+      const idx = {
+        clave: header.indexOf('clave'),
+        etiqueta: header.indexOf('etiqueta'),
+        tipo: header.indexOf('tipo'),
+        opciones: header.indexOf('opciones'),
+        colores: header.indexOf('colores'),
+        colorpordefecto: header.indexOf('colorpordefecto'),
+        oculto: header.indexOf('oculto'),
+        miles: header.indexOf('miles')
+      };
+      if (idx.clave === -1 || idx.etiqueta === -1 || idx.tipo === -1) {
+        setConfigStatus('El CSV necesita columnas Clave, Etiqueta y Tipo.');
+        return false;
+      }
+
+      const typeMap = { 'texto': 'text', 'número': 'number', 'numero': 'number', 'fecha': 'date', 'lista': 'select' };
+      const isTrue = v => /^(true|verdadero|1)$/i.test((v || '').trim());
+      const newFields = [];
+
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const key = (r[idx.clave] || '').trim();
+        const label = (r[idx.etiqueta] || '').trim();
+        if (!key || !label) continue;
+        const tipoRaw = (r[idx.tipo] || '').trim().toLowerCase();
+        const inputType = typeMap[tipoRaw] || (['text', 'number', 'date', 'select'].includes(tipoRaw) ? tipoRaw : 'text');
+        const hidden = idx.oculto !== -1 && isTrue(r[idx.oculto]);
+        const field = { key, label, inputType, hidden };
+
+        if (inputType === 'select') {
+          const opts = (idx.opciones !== -1 ? (r[idx.opciones] || '') : '').split(',').map(s => s.trim()).filter(Boolean);
+          const cols = (idx.colores !== -1 ? (r[idx.colores] || '') : '').split(',').map(s => s.trim());
+          field.options = opts;
+          field.valueColors = {};
+          opts.forEach((o, oi) => { field.valueColors[o] = cols[oi] || nextPaletteColor(Object.values(field.valueColors)); });
+        } else {
+          field.color = (idx.colorpordefecto !== -1 ? (r[idx.colorpordefecto] || '').trim() : '') || nextPaletteColor([]);
+          if (inputType === 'number') field.thousands = idx.miles !== -1 && isTrue(r[idx.miles]);
+        }
+        newFields.push(field);
+      }
+
+      if (!newFields.length) { setConfigStatus('No se encontraron campos válidos en el CSV.'); return false; }
+
+      if (!confirm(`Esto reemplazará tu configuración actual (${fields.length} campo(s)) con ${newFields.length} campo(s) del CSV.\n\n¿Continuar?`)) {
+        setConfigStatus('Importación cancelada.');
+        return false;
+      }
+
+      fields = newFields;
+      saveFields();
+      renderSettingsPanel();
+      renderFormFields();
+      setConfigStatus(`✅ ${newFields.length} campo(s) importados correctamente.`);
+      return true;
     }
 
     // ---------------- Editor state (Generator view) ----------------
@@ -3175,9 +3195,11 @@ LegoCore.registerBlock({
         <div id="wa-tag-settings-panel" style="display:flex; flex-direction:column; gap:8px;"></div>
 
         <div class="wa-tag-settings-divider">
-          <label class="wa-tag-label">Configuración de campos (Excel / Google Sheets)</label>
+          <label class="wa-tag-label">Configuración de campos (Excel / CSV / Google Sheets)</label>
           <div class="wa-tag-row">
             <button id="wa-tag-config-export-btn" class="wa-tag-btn wa-tag-btn-accent">⬇️ Exportar a Excel</button>
+            <button id="wa-tag-config-import-file-btn" class="wa-tag-btn">📁 Importar archivo CSV</button>
+            <input type="file" id="wa-tag-config-file-input" accept=".csv,text/csv" style="display:none;">
           </div>
           <input type="text" id="wa-tag-config-sheet-url" class="wa-tag-input" placeholder="https://docs.google.com/spreadsheets/d/...">
           <button id="wa-tag-config-import-btn" class="wa-tag-btn">📥 Importar desde Google Sheets (reemplaza todo)</button>
@@ -3505,8 +3527,36 @@ LegoCore.registerBlock({
       XLSX.writeFile(wb, `config_campos_contactos_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    // ---------------- Field config: Google Sheets import (replaces everything) ----------------
+    // ---------------- Field config: Manual CSV import & Google Sheets import ----------------
     function setConfigStatus(msg) { wrap.querySelector('#wa-tag-config-status').textContent = msg; }
+
+    const fileInput = wrap.querySelector('#wa-tag-config-file-input');
+    const importFileBtn = wrap.querySelector('#wa-tag-config-import-file-btn');
+
+    importFileBtn.onclick = () => fileInput.click();
+
+    fileInput.addEventListener('change', e => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = evt => {
+        try {
+          const csvText = evt.target.result;
+          const rows = parseCsv(csvText);
+          applyCsvRows(rows);
+        } catch (err) {
+          setConfigStatus('Error al leer el archivo CSV: ' + err.message);
+        } finally {
+          fileInput.value = ''; // Resetear para permitir cargar el mismo archivo
+        }
+      };
+      reader.onerror = () => {
+        setConfigStatus('Error al abrir el archivo local.');
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
+    });
 
     wrap.querySelector('#wa-tag-config-import-btn').onclick = async () => {
       const url = wrap.querySelector('#wa-tag-config-sheet-url').value.trim();
@@ -3524,63 +3574,7 @@ LegoCore.registerBlock({
       }
 
       const rows = parseCsv(csvText);
-      if (rows.length < 2) { setConfigStatus('La hoja no tiene filas de datos.'); return; }
-
-      const header = rows[0].map(h => h.trim().toLowerCase());
-      const idx = {
-        clave: header.indexOf('clave'),
-        etiqueta: header.indexOf('etiqueta'),
-        tipo: header.indexOf('tipo'),
-        opciones: header.indexOf('opciones'),
-        colores: header.indexOf('colores'),
-        colorpordefecto: header.indexOf('colorpordefecto'),
-        oculto: header.indexOf('oculto'),
-        miles: header.indexOf('miles')
-      };
-      if (idx.clave === -1 || idx.etiqueta === -1 || idx.tipo === -1) {
-        setConfigStatus('La hoja necesita columnas Clave, Etiqueta y Tipo.');
-        return;
-      }
-
-      const typeMap = { 'texto': 'text', 'número': 'number', 'numero': 'number', 'fecha': 'date', 'lista': 'select' };
-      const isTrue = v => /^(true|verdadero|1)$/i.test((v || '').trim());
-      const newFields = [];
-
-      for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        const key = (r[idx.clave] || '').trim();
-        const label = (r[idx.etiqueta] || '').trim();
-        if (!key || !label) continue;
-        const tipoRaw = (r[idx.tipo] || '').trim().toLowerCase();
-        const inputType = typeMap[tipoRaw] || (['text', 'number', 'date', 'select'].includes(tipoRaw) ? tipoRaw : 'text');
-        const hidden = idx.oculto !== -1 && isTrue(r[idx.oculto]);
-        const field = { key, label, inputType, hidden };
-
-        if (inputType === 'select') {
-          const opts = (idx.opciones !== -1 ? (r[idx.opciones] || '') : '').split(',').map(s => s.trim()).filter(Boolean);
-          const cols = (idx.colores !== -1 ? (r[idx.colores] || '') : '').split(',').map(s => s.trim());
-          field.options = opts;
-          field.valueColors = {};
-          opts.forEach((o, oi) => { field.valueColors[o] = cols[oi] || nextPaletteColor(Object.values(field.valueColors)); });
-        } else {
-          field.color = (idx.colorpordefecto !== -1 ? (r[idx.colorpordefecto] || '').trim() : '') || nextPaletteColor([]);
-          if (inputType === 'number') field.thousands = idx.miles !== -1 && isTrue(r[idx.miles]);
-        }
-        newFields.push(field);
-      }
-
-      if (!newFields.length) { setConfigStatus('No se encontraron campos válidos en la hoja.'); return; }
-
-      if (!confirm(`Esto reemplazará tu configuración actual (${fields.length} campo(s)) con ${newFields.length} campo(s) de la hoja.\n\n¿Continuar?`)) {
-        setConfigStatus('Importación cancelada.');
-        return;
-      }
-
-      fields = newFields;
-      saveFields();
-      renderSettingsPanel();
-      renderFormFields();
-      setConfigStatus(`✅ ${newFields.length} campo(s) importados correctamente.`);
+      applyCsvRows(rows);
     };
 
     // ---------------- Mount ----------------
