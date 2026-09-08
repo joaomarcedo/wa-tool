@@ -2933,13 +2933,14 @@ LegoCore.registerBlock({
    BLOCK: Contact Tag Editor (v4)
    ============================================================ */
 /* ============================================================
-   BLOCK 1: Contact Tag Editor (v3.1)
+   BLOCK 1: Contact Tag Editor (v3.2)
    ------------------------------------------------------------
    Standalone plugin -- no dependency on any other block.
    Mounts its own card into the Dual Sidebar via core.registerMenu.
 
-   Novedades:
-   - Importación manual de archivos CSV locales (sin requerir Google Sheets).
+   Novedades v3.2:
+   - Soporte para importar archivos locales .xlsx y .csv.
+   - Detección automática del formato de archivo subido.
    ============================================================ */
 LegoCore.registerBlock({
   id: 'contactTagEditorPlugin',
@@ -2995,7 +2996,7 @@ LegoCore.registerBlock({
       return parts.join(' ');
     }
 
-    // ---------------- Generic CSV parser (for Sheets / Manual import) ----------------
+    // ---------------- Generic CSV parser (for Sheets import) ----------------
     function parseCsv(text) {
       const rows = [];
       let row = [], field = '', inQuotes = false;
@@ -3015,7 +3016,7 @@ LegoCore.registerBlock({
         }
       }
       if (field.length || row.length) { row.push(field); rows.push(row); }
-      return rows.filter(r => r.some(cell => cell.trim() !== ''));
+      return rows.filter(r => r.some(cell => String(cell).trim() !== ''));
     }
 
     function extractSheetExportUrl(shareUrl) {
@@ -3045,10 +3046,10 @@ LegoCore.registerBlock({
       });
     }
 
-    function applyCsvRows(rows) {
-      if (rows.length < 2) { setConfigStatus('El CSV no tiene filas de datos.'); return false; }
+    function applyConfigRows(rows) {
+      if (!rows || rows.length < 2) { setConfigStatus('El archivo no contiene filas de datos.'); return false; }
 
-      const header = rows[0].map(h => h.trim().toLowerCase());
+      const header = rows[0].map(h => String(h || '').trim().toLowerCase());
       const idx = {
         clave: header.indexOf('clave'),
         etiqueta: header.indexOf('etiqueta'),
@@ -3059,41 +3060,43 @@ LegoCore.registerBlock({
         oculto: header.indexOf('oculto'),
         miles: header.indexOf('miles')
       };
+
       if (idx.clave === -1 || idx.etiqueta === -1 || idx.tipo === -1) {
-        setConfigStatus('El CSV necesita columnas Clave, Etiqueta y Tipo.');
+        setConfigStatus('El archivo necesita al menos las columnas Clave, Etiqueta y Tipo.');
         return false;
       }
 
       const typeMap = { 'texto': 'text', 'número': 'number', 'numero': 'number', 'fecha': 'date', 'lista': 'select' };
-      const isTrue = v => /^(true|verdadero|1)$/i.test((v || '').trim());
+      const isTrue = v => /^(true|verdadero|1)$/i.test(String(v || '').trim());
       const newFields = [];
 
       for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
-        const key = (r[idx.clave] || '').trim();
-        const label = (r[idx.etiqueta] || '').trim();
+        const key = String(r[idx.clave] || '').trim();
+        const label = String(r[idx.etiqueta] || '').trim();
         if (!key || !label) continue;
-        const tipoRaw = (r[idx.tipo] || '').trim().toLowerCase();
+
+        const tipoRaw = String(r[idx.tipo] || '').trim().toLowerCase();
         const inputType = typeMap[tipoRaw] || (['text', 'number', 'date', 'select'].includes(tipoRaw) ? tipoRaw : 'text');
         const hidden = idx.oculto !== -1 && isTrue(r[idx.oculto]);
         const field = { key, label, inputType, hidden };
 
         if (inputType === 'select') {
-          const opts = (idx.opciones !== -1 ? (r[idx.opciones] || '') : '').split(',').map(s => s.trim()).filter(Boolean);
-          const cols = (idx.colores !== -1 ? (r[idx.colores] || '') : '').split(',').map(s => s.trim());
+          const opts = (idx.opciones !== -1 ? String(r[idx.opciones] || '') : '').split(',').map(s => s.trim()).filter(Boolean);
+          const cols = (idx.colores !== -1 ? String(r[idx.colores] || '') : '').split(',').map(s => s.trim());
           field.options = opts;
           field.valueColors = {};
           opts.forEach((o, oi) => { field.valueColors[o] = cols[oi] || nextPaletteColor(Object.values(field.valueColors)); });
         } else {
-          field.color = (idx.colorpordefecto !== -1 ? (r[idx.colorpordefecto] || '').trim() : '') || nextPaletteColor([]);
+          field.color = (idx.colorpordefecto !== -1 ? String(r[idx.colorpordefecto] || '').trim() : '') || nextPaletteColor([]);
           if (inputType === 'number') field.thousands = idx.miles !== -1 && isTrue(r[idx.miles]);
         }
         newFields.push(field);
       }
 
-      if (!newFields.length) { setConfigStatus('No se encontraron campos válidos en el CSV.'); return false; }
+      if (!newFields.length) { setConfigStatus('No se encontraron campos válidos en el archivo.'); return false; }
 
-      if (!confirm(`Esto reemplazará tu configuración actual (${fields.length} campo(s)) con ${newFields.length} campo(s) del CSV.\n\n¿Continuar?`)) {
+      if (!confirm(`Esto reemplazará tu configuración actual (${fields.length} campo(s)) con ${newFields.length} campo(s) importados.\n\n¿Continuar?`)) {
         setConfigStatus('Importación cancelada.');
         return false;
       }
@@ -3195,11 +3198,11 @@ LegoCore.registerBlock({
         <div id="wa-tag-settings-panel" style="display:flex; flex-direction:column; gap:8px;"></div>
 
         <div class="wa-tag-settings-divider">
-          <label class="wa-tag-label">Configuración de campos (Excel / CSV / Google Sheets)</label>
+          <label class="wa-tag-label">Configuración de campos (Excel / Google Sheets)</label>
           <div class="wa-tag-row">
             <button id="wa-tag-config-export-btn" class="wa-tag-btn wa-tag-btn-accent">⬇️ Exportar a Excel</button>
-            <button id="wa-tag-config-import-file-btn" class="wa-tag-btn">📁 Importar archivo CSV</button>
-            <input type="file" id="wa-tag-config-file-input" accept=".csv,text/csv" style="display:none;">
+            <button id="wa-tag-config-import-file-btn" class="wa-tag-btn">📁 Importar Excel/CSV</button>
+            <input type="file" id="wa-tag-config-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
           </div>
           <input type="text" id="wa-tag-config-sheet-url" class="wa-tag-input" placeholder="https://docs.google.com/spreadsheets/d/...">
           <button id="wa-tag-config-import-btn" class="wa-tag-btn">📥 Importar desde Google Sheets (reemplaza todo)</button>
@@ -3527,7 +3530,7 @@ LegoCore.registerBlock({
       XLSX.writeFile(wb, `config_campos_contactos_${new Date().toISOString().slice(0, 10)}.xlsx`);
     };
 
-    // ---------------- Field config: Manual CSV import & Google Sheets import ----------------
+    // ---------------- Field config: Local File (XLSX/CSV) & Google Sheets import ----------------
     function setConfigStatus(msg) { wrap.querySelector('#wa-tag-config-status').textContent = msg; }
 
     const fileInput = wrap.querySelector('#wa-tag-config-file-input');
@@ -3539,23 +3542,54 @@ LegoCore.registerBlock({
       const file = e.target.files && e.target.files[0];
       if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = evt => {
-        try {
-          const csvText = evt.target.result;
-          const rows = parseCsv(csvText);
-          applyCsvRows(rows);
-        } catch (err) {
-          setConfigStatus('Error al leer el archivo CSV: ' + err.message);
-        } finally {
-          fileInput.value = ''; // Resetear para permitir cargar el mismo archivo
+      const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+
+      if (isXlsx) {
+        if (typeof XLSX === 'undefined') {
+          alert('Falta la librería XLSX para procesar libros Excel. Agrega esta línea al encabezado de Tampermonkey:\n\n// @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+          fileInput.value = '';
+          return;
         }
-      };
-      reader.onerror = () => {
-        setConfigStatus('Error al abrir el archivo local.');
-        fileInput.value = '';
-      };
-      reader.readAsText(file);
+
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const data = new Uint8Array(evt.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+            applyConfigRows(rows);
+          } catch (err) {
+            setConfigStatus('Error al leer el archivo Excel: ' + err.message);
+          } finally {
+            fileInput.value = '';
+          }
+        };
+        reader.onerror = () => {
+          setConfigStatus('Error al abrir el archivo Excel local.');
+          fileInput.value = '';
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = evt => {
+          try {
+            const csvText = evt.target.result;
+            const rows = parseCsv(csvText);
+            applyConfigRows(rows);
+          } catch (err) {
+            setConfigStatus('Error al leer el archivo CSV: ' + err.message);
+          } finally {
+            fileInput.value = '';
+          }
+        };
+        reader.onerror = () => {
+          setConfigStatus('Error al abrir el archivo local.');
+          fileInput.value = '';
+        };
+        reader.readAsText(file);
+      }
     });
 
     wrap.querySelector('#wa-tag-config-import-btn').onclick = async () => {
@@ -3574,7 +3608,7 @@ LegoCore.registerBlock({
       }
 
       const rows = parseCsv(csvText);
-      applyCsvRows(rows);
+      applyConfigRows(rows);
     };
 
     // ---------------- Mount ----------------
