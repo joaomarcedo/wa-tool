@@ -2,11 +2,13 @@
 // @name         WhatsApp Lego Toolkit
 // @namespace    https://node-builder.local/
 // @version      1.0.0
-// @description  Compiled by Node Builder -- 24 block(s): Sidebar Plugin Manager, Dual Sidebar UI Shell, Menu Collapse Module, Menu Panel Switcher, Menu Card Reorder Module, Menu Card Pop-out Module, Header Toolbar Organizer, Workspace Profile & Visibility Manager, WhatsApp Layout Resizer, Sidebar-to-Resizer Sync, Text Library Height Fix, Reset Menus, Quick Chat Box, Shared Tree Styles, Saved Messages (Text Library), Saved Images (Image Library), Message Sequence Builder, Quick Commands, Google Sheets Sync, Highlighter, Text resizer, Contact Tag Editor, Contact Badge Renderer, Dashboard Export
+// @description  Compiled by Node Builder -- 22 block(s): Sidebar Plugin Manager, Dual Sidebar UI Shell, Menu Collapse Module, Menu Panel Switcher, Menu Card Reorder Module, Menu Card Pop-out Module, Header Toolbar Organizer, WhatsApp Layout Resizer, Sidebar-to-Resizer Sync, Text Library Height Fix, Reset Menus, Quick Chat Box, Shared Tree Styles, Saved Messages (Text Library), Saved Images (Image Library), Message Sequence Builder, Quick Commands, Google Sheets Sync, Highlighter, Text resizer, Contact Badge Renderer, Video Sender
 // @author       You
 // @match        https://web.whatsapp.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      docs.google.com
+// @connect      bunnycdn.com
+// @connect      generativelanguage.googleapis.com
 // @require      https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
 // @run-at       document-idle
 // ==/UserScript==
@@ -677,6 +679,9 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
+   BLOCK: Menu Card Pop-out Module (v2)
+   ============================================================ */
+/* ============================================================
    BLOCK: Menu Card Pop-out Module (v1)
    ============================================================ */
 LegoCore.registerBlock({
@@ -706,7 +711,12 @@ LegoCore.registerBlock({
       const key = card.dataset.key;
       if (document.getElementById('wa-float-modal-' + key)) return;
 
-      const state = popoutStates[key] || { top: 120, left: 220, width: 320, height: 380 };
+      // Initialize state for this key if it doesn't exist, and mark it as popped out
+      popoutStates[key] = popoutStates[key] || { top: 120, left: 220, width: 320 };
+      popoutStates[key].isPoppedOut = true;
+      saveStates();
+
+      const state = popoutStates[key];
       const modal = document.createElement('div');
       modal.className = 'wa-floating-modal';
       modal.id = 'wa-float-modal-' + key;
@@ -747,7 +757,9 @@ LegoCore.registerBlock({
       if (content) card.appendChild(content);
       modal.remove();
       card.classList.remove('is-popped-out');
-      delete popoutStates[key];
+      
+      // Update state instead of deleting, so it remembers size/position for next time
+      if (popoutStates[key]) popoutStates[key].isPoppedOut = false;
       saveStates();
     }
 
@@ -826,8 +838,6 @@ LegoCore.registerBlock({
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         createFloatingWindow(card);
-        popoutStates[key] = popoutStates[key] || { top: 120, left: 220, width: 320 };
-        saveStates();
       });
       const switchBtn = header.querySelector('.wa-switch-panel-btn');
       const collapseBtn = header.querySelector('.wa-collapse-btn');
@@ -837,7 +847,10 @@ LegoCore.registerBlock({
       else if (dragHandle) header.insertBefore(btn, dragHandle);
       else header.appendChild(btn);
 
-      if (popoutStates[key]) setTimeout(() => createFloatingWindow(card), 100);
+      // Restore pop-out state automatically if it was left popped out
+      if (popoutStates[key] && (popoutStates[key].isPoppedOut === true || popoutStates[key].isPoppedOut === undefined)) {
+        setTimeout(() => createFloatingWindow(card), 100);
+      }
     }
 
     function attachToContainer(containerId) {
@@ -909,161 +922,52 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Workspace Profile & Visibility Manager (v1)
+   BLOCK: WhatsApp Layout Resizer (v2)
    ============================================================ */
-LegoCore.registerBlock({
-  id: 'profileManagerModule',
-  init(core) {
-    const STORAGE_KEY = 'wa_workspace_profiles_v1';
-    const POS_STORAGE_KEY = 'wa_workspace_profile_window_pos_v1';
-
-    let profileData = {
-      activeProfile: 'Default',
-      profiles: {
-        'Default': {},
-        'Sender Only': { 'quick-chat-box': true, 'sequence-builder': true, 'text-library-module': false, 'image-library-module': false },
-        'Library Focus': { 'text-library-module': true, 'image-library-module': true, 'quick-chat-box': false, 'sequence-builder': false }
-      },
-      hiddenCards: {}
-    };
-    let windowPos = { top: 60, left: 90 };
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (saved) profileData = Object.assign(profileData, saved);
-      const savedPos = JSON.parse(localStorage.getItem(POS_STORAGE_KEY));
-      if (savedPos && typeof savedPos.top === 'number' && typeof savedPos.left === 'number') windowPos = savedPos;
-    } catch (e) {}
-
-    function saveProfiles() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(profileData)); } catch (e) {} }
-    function saveWindowPosition(top, left) { windowPos = { top, left }; try { localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(windowPos)); } catch (e) {} }
-
-    const style = document.createElement('style');
-    style.innerHTML = `
-      .wa-profile-launcher-btn { position: fixed; z-index: 2147483646; background: var(--wat-surface, #17171d); color: var(--wat-accent, #25d366); border: 1px solid var(--wat-border-strong, rgba(255,255,255,0.2)); border-radius: 999px; padding: 6px 12px; font-size: 11px; font-weight: 700; cursor: pointer; bottom: 12px; right: 12px; }
-      .wa-profile-window { position: fixed; width: 300px; z-index: 2147483647; background: var(--wat-surface, #17171d); border: 1px solid var(--wat-border-strong, rgba(255,255,255,0.2)); border-radius: 10px; padding: 12px; color: var(--wat-text, #ece9e4); font-family: -apple-system, sans-serif; box-shadow: 0 10px 30px rgba(0,0,0,0.7); display: none; flex-direction: column; gap: 10px; }
-      .wa-profile-window.open { display: flex; }
-      .wa-profile-window-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; cursor: grab; }
-      .wa-profile-select-row { display: flex; gap: 6px; align-items: center; }
-      .wa-profile-select-row select { flex: 1; background: #111; color: #fff; border: 1px solid #333; border-radius: 5px; padding: 4px; font-size: 11px; }
-      .wa-profile-card-row { display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; padding: 3px 0; }
-    `;
-    document.head.appendChild(style);
-
-    const launcherBtn = document.createElement('button');
-    launcherBtn.className = 'wa-profile-launcher-btn';
-    launcherBtn.innerText = '⚙ Workspace';
-    document.body.appendChild(launcherBtn);
-
-    const win = document.createElement('div');
-    win.className = 'wa-profile-window';
-    win.style.top = windowPos.top + 'px';
-    win.style.left = windowPos.left + 'px';
-    win.innerHTML = `
-      <div class="wa-profile-window-header"><span>⚙ Workspace Profiles</span><button id="wa-profile-close" style="background:none;border:none;color:#94a3b8;cursor:pointer;">✕</button></div>
-      <div class="wa-profile-select-row">
-        <select id="wa-profile-select"></select>
-        <button id="wa-profile-apply" class="wa-hide-btn">Apply</button>
-      </div>
-      <div id="wa-profile-card-list" style="display:flex; flex-direction:column; gap:2px; max-height:220px; overflow-y:auto;"></div>
-    `;
-    document.body.appendChild(win);
-
-    function refreshProfileSelect() {
-      const sel = win.querySelector('#wa-profile-select');
-      sel.innerHTML = Object.keys(profileData.profiles).map(name => `<option value="${name}" ${name === profileData.activeProfile ? 'selected' : ''}>${name}</option>`).join('');
-    }
-
-    function refreshCardList() {
-      const list = win.querySelector('#wa-profile-card-list');
-      const cards = document.querySelectorAll('.wa-draggable-menu');
-      list.innerHTML = '';
-      cards.forEach(card => {
-        const key = card.dataset.key;
-        const label = card.querySelector('.wa-menu-header span') ? card.querySelector('.wa-menu-header span').textContent : key;
-        const hidden = !!profileData.hiddenCards[key];
-        const row = document.createElement('div');
-        row.className = 'wa-profile-card-row';
-        row.innerHTML = `<span>${label}</span><label style="cursor:pointer;"><input type="checkbox" data-key="${key}" ${hidden ? '' : 'checked'}> Visible</label>`;
-        row.querySelector('input').onchange = (e) => {
-          profileData.hiddenCards[key] = !e.target.checked;
-          saveProfiles();
-          applyVisibility();
-        };
-        list.appendChild(row);
-      });
-    }
-
-    function applyVisibility() {
-      document.querySelectorAll('.wa-draggable-menu').forEach(card => {
-        const key = card.dataset.key;
-        card.classList.toggle('is-profile-hidden', !!profileData.hiddenCards[key]);
-      });
-    }
-
-    const visibilityStyle = document.createElement('style');
-    visibilityStyle.innerHTML = `.wa-draggable-menu.is-profile-hidden { display: none !important; }`;
-    document.head.appendChild(visibilityStyle);
-
-    win.querySelector('#wa-profile-close').onclick = () => win.classList.remove('open');
-    launcherBtn.onclick = () => { win.classList.toggle('open'); if (win.classList.contains('open')) refreshCardList(); };
-    win.querySelector('#wa-profile-apply').onclick = () => {
-      const chosen = win.querySelector('#wa-profile-select').value;
-      profileData.activeProfile = chosen;
-      const visibilityMap = profileData.profiles[chosen] || {};
-      document.querySelectorAll('.wa-draggable-menu').forEach(card => {
-        const key = card.dataset.key;
-        if (Object.prototype.hasOwnProperty.call(visibilityMap, key)) profileData.hiddenCards[key] = !visibilityMap[key];
-      });
-      saveProfiles(); applyVisibility(); refreshCardList();
-    };
-
-    core.makeDraggable(win, win.querySelector('.wa-profile-window-header'), null);
-    const header = win.querySelector('.wa-profile-window-header');
-    header.addEventListener('mouseup', () => {
-      const rect = win.getBoundingClientRect();
-      saveWindowPosition(rect.top, rect.left);
-    });
-
-    refreshProfileSelect();
-    applyVisibility();
-    core.emit('block:ready', { id: 'profileManagerModule' });
-  }
-});
-
 /* ============================================================
    BLOCK: WhatsApp Layout Resizer (v1)
    ============================================================ */
 LegoCore.registerBlock({
   id: 'waPageResizerFeature',
   init(core) {
-    const WA_APP_SELECTOR = '#app > div';
-
     function applyOffsets(leftWidth, rightWidth) {
-      const appRoot = document.querySelector(WA_APP_SELECTOR);
-      if (!appRoot) return;
-      appRoot.style.marginLeft = leftWidth + 'px';
-      appRoot.style.marginRight = rightWidth + 'px';
-      appRoot.style.transition = 'margin 0.28s cubic-bezier(0.22, 0.61, 0.36, 1)';
-      appRoot.style.width = `calc(100% - ${leftWidth + rightWidth}px)`;
+      let styleEl = document.getElementById('wa-layout-offsets');
+      
+      // If the style element doesn't exist yet, create it
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'wa-layout-offsets';
+        document.head.appendChild(styleEl);
+      }
+      
+      // Using a CSS stylesheet with !important prevents WhatsApp from wiping it out 
+      // during React re-renders, and we don't have to wait for the DOM to load first.
+      styleEl.innerHTML = `
+        #app > div {
+          margin-left: ${leftWidth}px !important;
+          margin-right: ${rightWidth}px !important;
+          width: calc(100% - ${leftWidth + rightWidth}px) !important;
+          transition: margin 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) !important;
+        }
+      `;
     }
 
+    // Listen for resize events from the sidebars
     window.addEventListener('wa-resizer-update', (e) => {
       applyOffsets(e.detail.leftWidth, e.detail.rightWidth);
     });
 
-    // Apply current sidebar prefs once on load, once the app root exists.
+    // Apply the saved width preferences immediately on load
     function initialApply(attempts) {
       const prefs = core.getSidebarPrefs && core.getSidebarPrefs();
-      const appRoot = document.querySelector(WA_APP_SELECTOR);
-      if (prefs && appRoot) {
+      if (prefs) {
         applyOffsets(prefs.leftHidden ? 0 : prefs.leftWidth, prefs.rightHidden ? 0 : prefs.rightWidth);
       } else if (attempts > 0) {
-        setTimeout(() => initialApply(attempts - 1), 300);
+        setTimeout(() => initialApply(attempts - 1), 200);
       }
     }
-    initialApply(15);
+    initialApply(10);
 
-    console.log("[waPageResizerFeature] WhatsApp layout offset handler loaded. Verify WA_APP_SELECTOR still matches WhatsApp's current DOM.");
     core.emit('block:ready', { id: 'waPageResizerFeature' });
   }
 });
@@ -1084,6 +988,9 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
+   BLOCK: Text Library Height Fix (v2)
+   ============================================================ */
+/* ============================================================
    BLOCK: Text Library Height Fix (v1)
    ============================================================ */
 LegoCore.registerBlock({
@@ -1093,14 +1000,16 @@ LegoCore.registerBlock({
     style.innerHTML = `
       .wa-draggable-menu[data-key="text-library-module"] .wa-menu-content,
       .wa-draggable-menu[data-key="image-library-module"] .wa-menu-content {
-        display: flex; flex-direction: column; height: 60vh; max-height: 80vh; min-height: 200px;
+        display: flex; flex-direction: column; height: auto; max-height: 80vh; min-height: 200px;
       }
       .wa-draggable-menu[data-key="text-library-module"] .wa-tln-tree,
       .wa-draggable-menu[data-key="image-library-module"] .wa-tln-tree {
-        max-height: none !important; flex: 1; min-height: 0; overflow-y: auto;
+        max-height: 50vh !important; flex: 1; min-height: 150px; overflow-y: auto;
       }
       .wa-floating-modal[id="wa-float-modal-text-library-module"],
-      .wa-floating-modal[id="wa-float-modal-image-library-module"] { height: 70vh; min-height: 300px; }
+      .wa-floating-modal[id="wa-float-modal-image-library-module"] { 
+        height: auto; min-height: 300px; 
+      }
     `;
     document.head.appendChild(style);
     core.emit('block:ready', { id: 'textLibraryHeightFix' });
@@ -1926,324 +1835,986 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Message Sequence Builder (v7)
+   BLOCK: Message Sequence Builder (v9)
    ============================================================ */
 /* ============================================================
-   BLOCK: Message Sequence Builder (v7)
+   BLOCK: Secuencias de Mensajes (v9.2 — lista simple con carpetas, tú presionas Enter)
+   ------------------------------------------------------------
+   REEMPLAZA a "Message Sequence Builder (v8)". Usa los mismos datos
+   guardados (wa_sequences_v1), así que tus secuencias siguen ahí.
+
+   CÓMO FUNCIONA
+   - ▶ en una secuencia: el primer paso se CARGA en el chat abierto
+     (texto en la caja de mensaje; imagen/video en la vista previa de
+     WhatsApp con su texto). Nunca se envía solo.
+   - Tú presionas Enter. Cuando WhatsApp realmente envió el mensaje,
+     se carga el siguiente paso. Así hasta el final.
+   - Barra inferior: "2 / 4 · Enter ↵" + Saltar + ■ Detener.
+   - Carpetas: 📁 Carpeta crea una; arrastra ⠿ (aparece al pasar el
+     mouse) para meter una secuencia en una carpeta; clic en la carpeta
+     la abre/cierra; ⚙️ renombra o BORRAR (las secuencias pasan afuera).
+   - Si cambias de chat a mitad de camino, la secuencia se detiene.
+   - Ya no hay temporizadores ni "Auto-Send" (las esperas antiguas
+     se eliminan al abrir).
+
+   NECESITA (ya están en tu kit):
+   - Saved Messages  (core.getTextLibrary)
+   - Saved Images    (core.getImageLibrary / core.getSavedImageBlob)
+   - Saved Videos    (core.getVideoLibrary / core.getSavedVideoBlob) — opcional
    ============================================================ */
 LegoCore.registerBlock({
   id: 'sequenceBuilderModule',
   init(core) {
     const STORAGE_KEY = 'wa_sequences_v1';
-    let sequences = JSON.parse(localStorage.getItem(STORAGE_KEY)) || { list: [], activeId: null };
-    function saveSequences() { localStorage.setItem(STORAGE_KEY, JSON.stringify(sequences)); }
+    const METHOD_KEY = 'wa_seq_attach_method';
+    const DEBUG = true;
 
+    // ---------------- Selectores de WhatsApp (ajustar si cambian) ----------------
+    const SEL = {
+      composer: ['#main footer [contenteditable="true"][role="textbox"]', '#main footer [contenteditable="true"]', 'footer [contenteditable="true"]'],
+      attachBtn: ['[data-icon="plus-rounded"]', '[data-icon="plus"]', '[data-icon="attach-menu-plus"]', '[data-icon="clip"]', '[aria-label="Attach"]', '[aria-label="Adjuntar"]', '[title="Attach"]', '[title="Adjuntar"]'],
+      sendBtn: ['[data-icon="wds-ic-send-filled"]', '[data-icon="send"]', '[aria-label="Send"]', '[aria-label="Enviar"]'],
+      chatTitle: ['#main header span[title]', '#main header [dir="auto"]']
+    };
+
+    // ---------------- Helpers ----------------
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const log = (...a) => { if (DEBUG) console.log('[secuencias]', ...a); };
+    const notify = msg => { if (core.notifyError) core.notifyError(msg); else alert(msg); };
+    const isVisible = el => !!el && el.isConnected && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+    // UI del kit (no de WhatsApp). #wa-popovers-bucket es de WhatsApp aunque empiece con "wa-".
+    const isOurUI = el => {
+      if (!el) return false;
+      if (el.closest('#wa-popovers-bucket')) return false;
+      return !!el.closest('.wa-tln-container, .wa-tlp-modal-overlay, #wa-sq-bar, [class^="wa-"], [id^="wa-"]');
+    };
+    const clickable = el => el.closest('button, [role="button"]') || el;
+    const qVisible = (list, filter = () => true) => {
+      for (const s of list) {
+        const el = [...document.querySelectorAll(s)].find(e => isVisible(e) && filter(e));
+        if (el) return el;
+      }
+      return null;
+    };
+    const fold = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    // ---------------- Datos ----------------
+    let data;
+    try { data = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch (e) { data = {}; }
+    if (!Array.isArray(data.list)) data.list = [];
+    if (!Array.isArray(data.folders)) data.folders = []; // [{ id, name, collapsed, parentId, order }]
+    data.list.forEach((s, i) => {
+      if (!s.parentId) s.parentId = 'root';
+      if (typeof s.order !== 'number') s.order = i;
+    });
+    // Sin temporizadores: se eliminan las esperas antiguas
+    data.list.forEach(s => { s.steps = (s.steps || []).filter(st => st.type !== 'wait'); });
+    function save() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
+    save();
+
+    const libs = () => ({
+      text: core.getTextLibrary ? core.getTextLibrary() : { items: [] },
+      img: core.getImageLibrary ? core.getImageLibrary() : { items: [] },
+      vid: core.getVideoLibrary ? core.getVideoLibrary() : { items: [] }
+    });
+
+    // Qué muestra cada paso: { label, icon, missing }
+    function describe(step) {
+      const { text, img, vid } = libs();
+      if (step.type === 'snippet') {
+        const s = (text.items || []).find(i => i.id === step.snippetId);
+        return s ? { label: s.title || 'Sin título', icon: s.imageId ? '🖼' : '' } : { label: '(mensaje borrado)', icon: '⚠️', missing: true };
+      }
+      if (step.type === 'image') {
+        const s = (img.items || []).find(i => i.id === step.imageId);
+        return s ? { label: s.name || 'Imagen', icon: '🖼' } : { label: '(imagen borrada)', icon: '⚠️', missing: true };
+      }
+      if (step.type === 'video') {
+        const s = (vid.items || []).find(i => i.id === step.videoId);
+        return s ? { label: s.name || 'Video', icon: '🎬' } : { label: '(video borrado)', icon: '⚠️', missing: true };
+      }
+      return { label: '?', icon: '⚠️', missing: true };
+    }
+
+    // ---------------- Estilos ----------------
     const style = document.createElement('style');
-    style.innerHTML = `
-      .wa-seq-step { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:6px 8px; font-size:11px; color:#e2e8f0; }
-      .wa-seq-step-drag { cursor:grab; color:#475569; }
-      .wa-seq-step-label { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .wa-seq-step.is-wait { color:#94a3b8; font-style:italic; }
-      .wa-seq-status { font-size:10px; color:#94a3b8; min-height:14px; }
-      .wa-seq-status.running .wa-seq-active-step { color:#25d366; font-weight:bold; }
-    `;
-    document.head.appendChild(style);
+    style.id = 'wa-sq-styles';
+    style.textContent = `
+      .wa-sq { display:flex; flex-direction:column; gap:6px; font-family:-apple-system,sans-serif; font-size:12px; color:var(--igls-text,#e2e8f0); }
+      .wa-sq-empty { font-size:11px; color:var(--igls-text-dim,#94a3b8); text-align:center; padding:14px 6px; }
+      .wa-sq-list { display:flex; flex-direction:column; }
 
+      .wa-sq-row { display:flex; align-items:center; gap:8px; padding:8px 6px; border-radius:6px; cursor:pointer; min-height:20px; }
+      .wa-sq-row:hover { background:rgba(255,255,255,.05); }
+      .wa-sq-row + .wa-sq-row { border-top:1px solid rgba(255,255,255,.05); }
+      .wa-sq-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wa-sq-play { flex-shrink:0; width:26px; height:26px; border-radius:50%; border:none; cursor:pointer; font-size:11px;
+        background:rgba(37,211,102,.15); color:var(--wat-accent,#25d366); display:flex; align-items:center; justify-content:center; }
+      .wa-sq-play:hover { background:var(--wat-accent,#25d366); color:#06210f; }
+      .wa-sq-play.stop { background:rgba(248,113,113,.15); color:#f87171; }
+      .wa-sq-prog { font-size:10.5px; color:var(--wat-accent,#25d366); font-weight:700; }
+      .wa-sq-row .wa-sq-grip, .wa-sq-fold .wa-sq-grip { display:inline-block; visibility:hidden; width:12px; margin-left:-4px; }
+      .wa-sq-row:hover .wa-sq-grip, .wa-sq-fold:hover .wa-sq-grip { visibility:visible; }
+      .wa-sq-fold { display:flex; align-items:center; gap:6px; cursor:pointer; }
+      .wa-sq-fold .wa-sq-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wa-sq-hover { display:none; gap:2px; }
+      .wa-sq-fold:hover .wa-sq-hover { display:flex; }
+      .wa-sq-count { font-size:10.5px; color:var(--igls-text-dim,#64748b); }
+      .wa-tln-folder-content > .wa-sq-row { padding-left:18px; }
+      .wa-sq-row.wa-tln-drop-top, .wa-sq-fold.wa-tln-drop-top { box-shadow:inset 0 2px 0 var(--wat-accent,#25d366); }
+      .wa-sq-row.wa-tln-drop-bottom, .wa-sq-fold.wa-tln-drop-bottom { box-shadow:inset 0 -2px 0 var(--wat-accent,#25d366); }
+      .wa-sq-fold.wa-tln-drop-inside { background:rgba(37,211,102,.12); }
+
+      .wa-sq-top { display:flex; align-items:center; gap:6px; }
+      .wa-sq-back, .wa-sq-more { background:none; border:none; color:var(--igls-text-dim,#94a3b8); cursor:pointer; font-size:14px; padding:4px 6px; border-radius:5px; }
+      .wa-sq-back:hover, .wa-sq-more:hover { color:var(--igls-text,#e2e8f0); background:rgba(255,255,255,.06); }
+      .wa-sq-title { flex:1; min-width:0; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wa-sq-menu { display:flex; gap:4px; }
+      .wa-sq-menu button { flex:1; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); color:var(--igls-text,#e2e8f0); border-radius:6px; padding:5px; font-size:11px; cursor:pointer; }
+      .wa-sq-menu button:hover { background:rgba(255,255,255,.1); }
+      .wa-sq-menu button.danger { color:#f87171; }
+
+      .wa-sq-step { display:flex; align-items:center; gap:8px; padding:7px 6px; border-radius:6px; position:relative; }
+      .wa-sq-step + .wa-sq-step { border-top:1px solid rgba(255,255,255,.05); }
+      .wa-sq-step:hover { background:rgba(255,255,255,.04); }
+      .wa-sq-step.current { background:rgba(37,211,102,.08); box-shadow:inset 3px 0 0 var(--wat-accent,#25d366); }
+      .wa-sq-step.missing .wa-sq-name { color:#f59e0b; }
+      .wa-sq-num { width:16px; text-align:right; color:var(--igls-text-dim,#64748b); font-size:11px; flex-shrink:0; }
+      .wa-sq-grip { display:none; width:16px; text-align:center; cursor:grab; color:var(--igls-text-dim,#64748b); flex-shrink:0; }
+      .wa-sq-step:hover .wa-sq-grip { display:inline-block; }
+      .wa-sq-step:hover .wa-sq-num { display:none; }
+      .wa-sq-icon { flex-shrink:0; font-size:11px; }
+      .wa-sq-del { display:none; background:none; border:none; color:var(--igls-text-dim,#94a3b8); cursor:pointer; font-size:12px; padding:0 2px; }
+      .wa-sq-del:hover { color:#f87171; }
+      .wa-sq-step:hover .wa-sq-del { display:inline-block; }
+      .wa-sq-step.drop-top { box-shadow:inset 0 2px 0 var(--wat-accent,#25d366); }
+      .wa-sq-step.drop-bottom { box-shadow:inset 0 -2px 0 var(--wat-accent,#25d366); }
+
+      .wa-sq-add { background:none; border:1px dashed rgba(255,255,255,.15); color:var(--igls-text-dim,#94a3b8); border-radius:6px; padding:7px; cursor:pointer; font-size:12px; }
+      .wa-sq-add:hover { color:var(--igls-text,#e2e8f0); border-color:rgba(255,255,255,.3); }
+
+      .wa-sq-picker { display:flex; flex-direction:column; gap:6px; border:1px solid rgba(255,255,255,.1); border-radius:8px; padding:8px; background:rgba(0,0,0,.15); }
+      .wa-sq-tabs { display:flex; gap:4px; }
+      .wa-sq-tab { flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--igls-text-dim,#94a3b8); padding:4px; font-size:11px; cursor:pointer; }
+      .wa-sq-tab.active { color:var(--igls-text,#e2e8f0); border-bottom-color:var(--wat-accent,#25d366); font-weight:700; }
+      .wa-sq-search { width:100%; box-sizing:border-box; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); color:var(--igls-text,#e2e8f0); border-radius:6px; padding:6px 8px; font-size:12px; outline:none; }
+      .wa-sq-search:focus { border-color:var(--wat-accent,#25d366); }
+      .wa-sq-results { max-height:220px; overflow-y:auto; display:flex; flex-direction:column; }
+      .wa-sq-folder { font-size:10px; color:var(--igls-text-dim,#64748b); padding:6px 4px 2px; }
+      .wa-sq-pick { padding:6px 6px; border-radius:5px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wa-sq-pick:hover { background:rgba(37,211,102,.12); }
+
+      #wa-sq-bar { position:fixed; left:50%; bottom:96px; transform:translateX(-50%); z-index:2147483647; display:flex; align-items:center; gap:10px;
+        background:#111b21; color:#e9edef; border:1px solid rgba(255,255,255,.12); border-radius:24px; padding:8px 8px 8px 16px;
+        font-family:-apple-system,sans-serif; font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.45); max-width:90vw; }
+      #wa-sq-bar .count { font-weight:800; color:var(--wat-accent,#25d366); }
+      #wa-sq-bar .msg { white-space:nowrap; }
+      #wa-sq-bar .key { display:inline-block; border:1px solid rgba(255,255,255,.3); border-radius:4px; padding:0 5px; font-size:11px; margin-left:2px; }
+      #wa-sq-bar button { background:rgba(255,255,255,.08); border:none; color:#e9edef; border-radius:16px; padding:5px 11px; font-size:12px; cursor:pointer; }
+      #wa-sq-bar button:hover { background:rgba(255,255,255,.16); }
+      #wa-sq-bar button.stop { color:#f87171; }
+      #wa-sq-bar.warn { border-color:#f59e0b; }
+      #wa-sq-bar.done { border-color:var(--wat-accent,#25d366); }
+    `;
+    if (!document.getElementById('wa-sq-styles')) document.head.appendChild(style);
+
+    // ---------------- UI ----------------
     const ui = document.createElement('div');
-    ui.className = 'wa-tln-container';
-    ui.innerHTML = `
-      <div class="wa-tln-header-btns">
-        <select id="wa-seq-select" class="wa-tlp-input" style="flex:2;"></select>
-        <button id="wa-seq-new" class="wa-tln-hbtn">➕ New</button>
-        <button id="wa-seq-delete" class="wa-tln-hbtn">🗑️</button>
-      </div>
-      <div class="wa-tln-header-btns">
-        <select id="wa-seq-add-snippet" class="wa-tlp-input" style="flex:2;"><option value="">+ Add message or image...</option></select>
-        <button id="wa-seq-add-wait" class="wa-tln-hbtn">⏱️ Wait</button>
-      </div>
-      <div id="wa-seq-steps" style="display:flex; flex-direction:column; gap:4px; max-height:220px; overflow-y:auto;"></div>
-      <button id="wa-seq-run" class="wa-base-btn" style="background:#25d366;">▶️ Run Sequence</button>
-      <div id="wa-seq-status" class="wa-seq-status"></div>
-    `;
+    ui.className = 'wa-tln-container wa-sq';
+    let view = { name: 'home', seqId: null, menu: false, picker: null };
+    // picker: null | { tab: 'text'|'img'|'vid', query: '' }
 
-    function currentSequence() {
-      if (!sequences.activeId) return null;
-      return sequences.list.find(s => s.id === sequences.activeId) || null;
+    function render() {
+      ui.innerHTML = '';
+      if (view.name === 'edit' && data.list.some(s => s.id === view.seqId)) renderEdit();
+      else { view = { name: 'home', seqId: null, menu: false, picker: null }; renderHome(); }
     }
 
-    function refreshSequenceSelect() {
-      const sel = ui.querySelector('#wa-seq-select');
-      sel.innerHTML = sequences.list.map(s => `<option value="${s.id}" ${s.id === sequences.activeId ? 'selected' : ''}>${s.name}</option>`).join('');
+    function playButton(seq) {
+      const b = document.createElement('button');
+      const running = run && run.seqId === seq.id;
+      b.className = 'wa-sq-play' + (running ? ' stop' : '');
+      b.textContent = running ? '■' : '▶';
+      b.title = running ? 'Detener' : 'Cargar en el chat abierto';
+      b.onclick = e => { e.stopPropagation(); running ? stopRun('Detenida.') : startRun(seq); };
+      return b;
     }
 
-    function refreshSnippetOptions() {
-      const sel = ui.querySelector('#wa-seq-add-snippet');
-      const textLib = core.getTextLibrary ? core.getTextLibrary() : { items: [] };
-      const imgLib = core.getImageLibrary ? core.getImageLibrary() : { items: [] };
-      
-      const snippets = textLib.items.filter(i => i.type === 'snippet');
-      const images = imgLib.items.filter(i => i.type === 'image');
-      
-      let html = '<option value="">+ Add message or image...</option>';
-      
-      if (snippets.length) {
-        html += '<optgroup label="📝 Saved Messages">';
-        html += snippets.map(s => `<option value="snip_${s.id}">${s.title}${s.imageId ? ' 🖼️' : ''}</option>`).join('');
-        html += '</optgroup>';
-      }
-      if (images.length) {
-        html += '<optgroup label="🖼️ Saved Images">';
-        html += images.map(img => `<option value="img_${img.id}">${img.name}${img.caption ? ' 📝' : ''}</option>`).join('');
-        html += '</optgroup>';
-      }
-      
-      sel.innerHTML = html;
+    // ---------------- Inicio: carpetas + secuencias ----------------
+    const findFolder = id => data.folders.find(f => f.id === id);
+    const parentOf = it => (it.parentId && it.parentId !== 'root' && findFolder(it.parentId)) ? it.parentId : 'root';
+    function isInside(folderId, ancestorId) {
+      let cur = findFolder(folderId), guard = 0;
+      while (cur && guard++ < 50) { if (cur.id === ancestorId) return true; cur = findFolder(parentOf(cur)); }
+      return false;
     }
+    const countIn = folderId => data.list.filter(s => { const p = parentOf(s); return p === folderId || (p !== 'root' && isInside(p, folderId)); }).length;
 
-    function renderSteps() {
-      const seq = currentSequence();
-      const stepsEl = ui.querySelector('#wa-seq-steps');
-      stepsEl.innerHTML = '';
-      if (!seq) { stepsEl.innerHTML = '<div style="font-size:10px;color:#64748b;padding:6px;">Create a sequence to get started.</div>'; return; }
-
-      const textLib = core.getTextLibrary ? core.getTextLibrary() : { items: [] };
-      const imgLib = core.getImageLibrary ? core.getImageLibrary() : { items: [] };
-
-      seq.steps.forEach((step, idx) => {
-        const row = document.createElement('div');
-        row.className = 'wa-seq-step' + (step.type === 'wait' ? ' is-wait' : '');
-        row.dataset.index = idx;
-        let label;
-        
-        if (step.type === 'wait') {
-          label = `⏱️ Wait ${step.seconds}s`;
-        } else if (step.type === 'snippet') {
-          const snip = textLib.items.find(i => i.id === step.snippetId);
-          label = snip ? `📝 ${snip.title}${snip.imageId ? ' 🖼️' : ''}` : '⚠️ (deleted message)';
-        } else if (step.type === 'image') {
-          const img = imgLib.items.find(i => i.id === step.imageId);
-          label = img ? `🖼️ ${img.name}${img.caption ? ' 📝' : ''}` : '⚠️ (deleted image)';
-        }
-        
-        row.innerHTML = `<span class="wa-seq-step-drag">⠿</span><span class="wa-seq-step-label">${idx + 1}. ${label}</span><button class="wa-tln-btn" data-action="up">↑</button><button class="wa-tln-btn" data-action="down">↓</button><button class="wa-tln-btn" data-action="remove">✕</button>`;
-        row.querySelector('[data-action="up"]').onclick = () => { if (idx > 0) { [seq.steps[idx - 1], seq.steps[idx]] = [seq.steps[idx], seq.steps[idx - 1]]; saveSequences(); renderSteps(); } };
-        row.querySelector('[data-action="down"]').onclick = () => { if (idx < seq.steps.length - 1) { [seq.steps[idx + 1], seq.steps[idx]] = [seq.steps[idx], seq.steps[idx + 1]]; saveSequences(); renderSteps(); } };
-        row.querySelector('[data-action="remove"]').onclick = () => { seq.steps.splice(idx, 1); saveSequences(); renderSteps(); };
-        stepsEl.appendChild(row);
+    let homeDrag = null; // { kind: 'seq'|'fld', id }
+    function homeDropHandlers(el, target) {
+      // target: { kind, item }
+      const zone = e => {
+        const r = el.getBoundingClientRect(), off = e.clientY - r.top;
+        if (target.kind === 'fld' && off > r.height * 0.25 && off < r.height * 0.75) return 'inside';
+        return off < r.height / 2 ? 'top' : 'bottom';
+      };
+      const clear = () => el.classList.remove('wa-tln-drop-top', 'wa-tln-drop-bottom', 'wa-tln-drop-inside');
+      el.addEventListener('dragover', e => {
+        if (!homeDrag || homeDrag.id === target.item.id) return;
+        e.preventDefault();
+        clear();
+        el.classList.add('wa-tln-drop-' + zone(e));
+      });
+      el.addEventListener('dragleave', clear);
+      el.addEventListener('drop', e => {
+        e.preventDefault();
+        clear();
+        if (!homeDrag || homeDrag.id === target.item.id) return;
+        const moving = homeDrag.kind === 'seq' ? data.list.find(s => s.id === homeDrag.id) : findFolder(homeDrag.id);
+        if (!moving) return;
+        const z = zone(e);
+        const newParent = z === 'inside' ? target.item.id : parentOf(target.item);
+        // Una carpeta no puede ir dentro de sí misma
+        if (homeDrag.kind === 'fld' && newParent !== 'root' && (newParent === moving.id || isInside(newParent, moving.id))) return;
+        moving.parentId = newParent;
+        moving.order = z === 'inside' ? Date.now() : target.item.order + (z === 'top' ? -0.5 : 0.5);
+        if (z === 'inside') target.item.collapsed = false;
+        homeDrag = null;
+        save(); render();
       });
     }
-
-    ui.querySelector('#wa-seq-new').onclick = () => {
-      const name = prompt('Sequence name:');
-      if (!name || !name.trim()) return;
-      const seq = { id: 'seq_' + Date.now(), name: name.trim(), steps: [] };
-      sequences.list.push(seq);
-      sequences.activeId = seq.id;
-      saveSequences(); refreshSequenceSelect(); renderSteps();
-    };
-    
-    ui.querySelector('#wa-seq-delete').onclick = () => {
-      if (!currentSequence()) return;
-      if (!confirm('Delete this sequence?')) return;
-      sequences.list = sequences.list.filter(s => s.id !== sequences.activeId);
-      sequences.activeId = sequences.list.length ? sequences.list[0].id : null;
-      saveSequences(); refreshSequenceSelect(); renderSteps();
-    };
-    
-    ui.querySelector('#wa-seq-select').onchange = (e) => { sequences.activeId = e.target.value; saveSequences(); renderSteps(); };
-    
-    ui.querySelector('#wa-seq-add-snippet').onchange = (e) => {
-      const val = e.target.value;
-      if (!val || !currentSequence()) return;
-      
-      if (val.startsWith('snip_')) {
-        currentSequence().steps.push({ type: 'snippet', snippetId: val.replace('snip_', '') });
-      } else if (val.startsWith('img_')) {
-        currentSequence().steps.push({ type: 'image', imageId: val.replace('img_', '') });
-      }
-      
-      saveSequences(); renderSteps();
-      e.target.value = '';
-    };
-    
-    ui.querySelector('#wa-seq-add-wait').onclick = () => {
-      if (!currentSequence()) return;
-      const secs = parseFloat(prompt('Wait how many seconds?', '3'));
-      if (!secs || secs <= 0) return;
-      currentSequence().steps.push({ type: 'wait', seconds: secs });
-      saveSequences(); renderSteps();
-    };
-
-    const getPngBlobPromise = async (blob) => {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        const url = URL.createObjectURL(blob);
-        img.onload = () => {
-          URL.revokeObjectURL(url);
-          const canvas = document.createElement('canvas');
-          canvas.width = img.width;
-          canvas.height = img.height;
-          canvas.getContext('2d').drawImage(img, 0, 0);
-          canvas.toBlob(pngBlob => {
-            if (pngBlob) resolve(pngBlob);
-            else reject(new Error('Canvas conversion failed'));
-          }, 'image/png');
-        };
-        img.onerror = () => reject(new Error('Failed to load image'));
-        img.src = url;
+    function makeGrip(kind, item, rowEl) {
+      const g = document.createElement('span');
+      g.className = 'wa-sq-grip';
+      g.textContent = '⠿';
+      g.title = 'Arrastra para mover / meter en carpeta';
+      g.draggable = true;
+      g.addEventListener('click', e => e.stopPropagation());
+      g.addEventListener('dragstart', e => {
+        homeDrag = { kind, id: item.id };
+        rowEl.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', item.id); } catch (err) { /* ignore */ }
       });
-    };
+      g.addEventListener('dragend', () => { rowEl.style.opacity = ''; homeDrag = null; });
+      return g;
+    }
 
-    ui.querySelector('#wa-seq-run').onclick = async () => {
-      const seq = currentSequence();
-      if (!seq || !seq.steps.length) return;
-      
-      const statusEl = ui.querySelector('#wa-seq-status');
-      const runBtn = ui.querySelector('#wa-seq-run');
-      runBtn.disabled = true;
-      
-      const textLib = core.getTextLibrary ? core.getTextLibrary() : { items: [] };
-      const imgLib = core.getImageLibrary ? core.getImageLibrary() : { items: [] };
+    function newSequence(parentId) {
+      const name = (prompt('Nombre de la secuencia:') || '').trim();
+      if (!name) return;
+      const seq = { id: 'seq_' + Date.now(), name, steps: [], parentId, order: Date.now() };
+      data.list.push(seq);
+      if (parentId !== 'root') { const f = findFolder(parentId); if (f) f.collapsed = false; }
+      save();
+      view = { name: 'edit', seqId: seq.id, menu: false, picker: { tab: 'text', query: '' } };
+      render();
+    }
 
-      for (let i = 0; i < seq.steps.length; i++) {
-        const step = seq.steps[i];
-        
-        if (step.type === 'wait') {
-          statusEl.textContent = `Waiting ${step.seconds}s (step ${i + 1}/${seq.steps.length})...`;
-          await core.wait(step.seconds * 1000);
-          continue;
-        }
-        
-        let textToInject = '';
-        let imageBlobToCopy = null;
-        let stepLabel = '';
+    function renderHome() {
+      const head = document.createElement('div');
+      head.className = 'wa-tln-header-btns';
+      head.innerHTML = '<button class="wa-tln-hbtn" data-a="seq">＋ Nueva</button><button class="wa-tln-hbtn" data-a="fld">📁 Carpeta</button>';
+      head.querySelector('[data-a="seq"]').onclick = () => newSequence('root');
+      head.querySelector('[data-a="fld"]').onclick = () => {
+        const name = (prompt('Nombre de la carpeta:') || '').trim();
+        if (!name) return;
+        data.folders.push({ id: 'sqf_' + Date.now(), name, collapsed: false, parentId: 'root', order: Date.now() });
+        save(); render();
+      };
+      ui.appendChild(head);
 
-        if (step.type === 'snippet') {
-          const snip = textLib.items.find(x => x.id === step.snippetId);
-          if (!snip) { statusEl.textContent = `Skipped step ${i + 1}: message deleted.`; continue; }
-          stepLabel = snip.title;
-          textToInject = snip.text || '';
-          
-          if (snip.imageId) {
-            const imgItem = imgLib.items.find(x => x.id === snip.imageId);
-            if (imgItem) imageBlobToCopy = await core.getSavedImageBlob(imgItem.id);
-          }
-        } else if (step.type === 'image') {
-          const imgItem = imgLib.items.find(x => x.id === step.imageId);
-          if (!imgItem) { statusEl.textContent = `Skipped step ${i + 1}: image deleted.`; continue; }
-          stepLabel = imgItem.name;
-          textToInject = imgItem.caption || '';
-          imageBlobToCopy = await core.getSavedImageBlob(imgItem.id);
-        }
+      if (!data.list.length && !data.folders.length) {
+        const empty = document.createElement('div');
+        empty.className = 'wa-sq-empty';
+        empty.textContent = 'Aún no hay secuencias.';
+        ui.appendChild(empty);
+        return;
+      }
 
-        try {
-          if (imageBlobToCopy) {
-            statusEl.textContent = `Step ${i + 1}/${seq.steps.length}: Waiting for you to paste...`;
-            
-            // 1. Focus the chat input and inject the text (becomes image caption)
-            const chatInput = document.querySelector('#main footer div[contenteditable="true"]') 
-                           || document.querySelector('div[contenteditable="true"][data-tab="10"]')
-                           || document.querySelector('div[contenteditable="true"]');
-                           
-            if (chatInput) {
-              chatInput.focus();
-              if (textToInject) {
-                document.execCommand('insertText', false, textToInject);
-              }
-            } else if (core.notifyError) {
-              core.notifyError('Please open a chat to paste.');
+      const tree = document.createElement('div');
+      tree.className = 'wa-sq-list';
+      ui.appendChild(tree);
+
+      (function build(parentId, container) {
+        const children = [
+          ...data.folders.filter(f => parentOf(f) === parentId).map(item => ({ kind: 'fld', item })),
+          ...data.list.filter(s => parentOf(s) === parentId).map(item => ({ kind: 'seq', item }))
+        ].sort((a, b) => a.item.order - b.item.order);
+
+        children.forEach(({ kind, item }) => {
+          if (kind === 'fld') {
+            const headEl = document.createElement('div');
+            headEl.className = 'wa-tln-folder-head wa-sq-fold';
+            headEl.innerHTML = '<span class="wa-tln-caret">▼</span><span class="wa-sq-name"></span><span class="wa-sq-hover"><button class="wa-tln-btn" data-a="add" title="Nueva secuencia aquí">＋</button><button class="wa-tln-btn" data-a="edit" title="Renombrar / eliminar">⚙️</button></span>';
+            if (item.collapsed) headEl.querySelector('.wa-tln-caret').classList.add('collapsed');
+            headEl.querySelector('.wa-sq-name').textContent = `📁 ${item.name}`;
+            headEl.insertBefore(makeGrip('fld', item, headEl), headEl.firstChild);
+            const content = document.createElement('div');
+            content.className = 'wa-tln-folder-content' + (item.collapsed ? ' collapsed' : '');
+            if (item.collapsed) content.style.display = 'none';
+
+            headEl.onclick = e => {
+              if (e.target.closest('button')) return;
+              item.collapsed = !item.collapsed; save(); render();
+            };
+            headEl.querySelector('[data-a="add"]').onclick = e => { e.stopPropagation(); newSequence(item.id); };
+            headEl.querySelector('[data-a="edit"]').onclick = e => {
+              e.stopPropagation();
+              const action = prompt(`Carpeta: "${item.name}"\n\nEscribe un nombre nuevo para renombrarla.\nEscribe BORRAR para eliminar la carpeta (las secuencias NO se borran, pasan afuera).`);
+              if (!action || !action.trim()) return;
+              if (action.trim() === 'BORRAR') {
+                const up = parentOf(item);
+                data.list.forEach(s => { if (s.parentId === item.id) s.parentId = up; });
+                data.folders.forEach(f => { if (f.parentId === item.id) f.parentId = up; });
+                data.folders = data.folders.filter(f => f !== item);
+              } else item.name = action.trim();
+              save(); render();
+            };
+            homeDropHandlers(headEl, { kind: 'fld', item });
+            // Muestra el número de secuencias solo si la carpeta está cerrada
+            if (item.collapsed) {
+              const n = countIn(item.id);
+              if (n) { const c = document.createElement('span'); c.className = 'wa-sq-count'; c.textContent = n; headEl.querySelector('.wa-sq-name').after(c); }
             }
-
-            // 2. Convert and copy the image to the clipboard
-            const pngBlob = await getPngBlobPromise(imageBlobToCopy);
-            await navigator.clipboard.write([
-              new ClipboardItem({ 'image/png': pngBlob })
-            ]);
-
-            // 3. Show bubble and set a trap for the paste event
-            await new Promise(resolve => {
-              const bubble = document.createElement('div');
-              bubble.style.cssText = 'position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:#25d366; color:#06210f; padding:12px 24px; border-radius:30px; font-size:14px; font-weight:bold; z-index:2147483647; box-shadow:0 10px 25px rgba(0,0,0,0.5); display:flex; align-items:center; gap:16px; font-family:-apple-system,sans-serif; border:2px solid #16a34a; animation: popIn 0.3s ease-out;';
-              bubble.innerHTML = `
-                <span>📋 Ready! Press <b>Ctrl+V</b>. (It will auto-send and continue!)</span>
-                <button style="background:transparent; color:#06210f; border:1px solid rgba(0,0,0,0.2); padding:6px 12px; border-radius:20px; cursor:pointer; font-weight:bold; font-size:11px; opacity:0.8;" title="Click to manually skip">Skip</button>
-              `;
-              document.body.appendChild(bubble);
-
-              const pasteHandler = async (e) => {
-                document.removeEventListener('paste', pasteHandler, true);
-                
-                bubble.innerHTML = '<span>⏳ Pasted! Waiting for WhatsApp...</span>';
-                
-                // FIXED: Give WhatsApp a full second to read the clipboard and slide the preview open
-                await core.wait(1000);
-                
-                // Poll for the Send button that specifically appears inside the Media Preview
-                let attempts = 0;
-                let sendBtn = null;
-                while (attempts < 20 && !sendBtn) {
-                  await core.wait(150);
-                  // Find all send buttons, but we only want the one that is currently visible
-                  const btns = Array.from(document.querySelectorAll('button[aria-label="Send"], [data-icon="send"], [data-testid="send"], span[data-icon="wds-ic-send-filled"]'));
-                  sendBtn = btns.find(b => b.offsetParent !== null);
-                  attempts++;
-                }
-
-                if (sendBtn) {
-                  bubble.innerHTML = '<span>🚀 Sending!</span>';
-                  await core.wait(200); // Final tiny buffer to let React bind the click listener
-                  const clickable = sendBtn.closest('div[role="button"], button') || sendBtn;
-                  clickable.click();
-                } else if (core.notifyError) {
-                  core.notifyError('Could not auto-send. Please click send manually.');
-                }
-
-                bubble.remove();
-                // Wait 1.5 seconds for WhatsApp to close the preview drawer before continuing
-                setTimeout(resolve, 1500); 
-              };
-
-              // Listen for the paste command
-              document.addEventListener('paste', pasteHandler, true);
-
-              // Manual override button
-              const skipBtn = bubble.querySelector('button');
-              skipBtn.onclick = () => {
-                document.removeEventListener('paste', pasteHandler, true);
-                bubble.remove();
-                setTimeout(resolve, 800);
-              };
-            });
-            
-          } else {
-            statusEl.textContent = `Sending step ${i + 1}/${seq.steps.length}: "${stepLabel}"...`;
-            core.injectTextToChat(textToInject, true);
-            await core.wait(500);
+            container.appendChild(headEl);
+            container.appendChild(content);
+            build(item.id, content);
+            return;
           }
-        } catch (err) {
-          statusEl.textContent = `Step ${i + 1} failed: ${err.message}`;
-          console.error('Sequence step error:', err);
-        }
-      }
-      statusEl.textContent = `Done -- ${seq.steps.length} step(s) processed.`;
-      runBtn.disabled = false;
-    };
 
+          const seq = item;
+          const row = document.createElement('div');
+          row.className = 'wa-sq-row';
+          row.title = 'Abrir';
+          row.appendChild(makeGrip('seq', seq, row));
+          const name = document.createElement('span');
+          name.className = 'wa-sq-name';
+          name.textContent = seq.name;
+          row.appendChild(name);
+          if (run && run.seqId === seq.id) {
+            const p = document.createElement('span');
+            p.className = 'wa-sq-prog';
+            p.textContent = `${run.idx + 1}/${run.steps.length}`;
+            row.appendChild(p);
+          }
+          row.appendChild(playButton(seq));
+          row.onclick = () => { view = { name: 'edit', seqId: seq.id, menu: false, picker: null }; render(); };
+          homeDropHandlers(row, { kind: 'seq', item: seq });
+          container.appendChild(row);
+        });
+      })('root', tree);
+    }
+
+    function renderEdit() {
+      const seq = data.list.find(s => s.id === view.seqId);
+
+      // Barra superior: ← nombre ▶ ⋯
+      const top = document.createElement('div');
+      top.className = 'wa-sq-top';
+      top.innerHTML = '<button class="wa-sq-back" title="Volver">←</button><span class="wa-sq-title"></span>';
+      top.querySelector('.wa-sq-title').textContent = seq.name;
+      top.querySelector('.wa-sq-back').onclick = () => { view = { name: 'home' }; render(); };
+      top.appendChild(playButton(seq));
+      const more = document.createElement('button');
+      more.className = 'wa-sq-more';
+      more.textContent = '⋯';
+      more.title = 'Más opciones';
+      more.onclick = () => { view.menu = !view.menu; render(); };
+      top.appendChild(more);
+      ui.appendChild(top);
+
+      if (view.menu) {
+        const menu = document.createElement('div');
+        menu.className = 'wa-sq-menu';
+        menu.innerHTML = '<button data-a="ren">Renombrar</button><button data-a="dup">Duplicar</button><button data-a="del" class="danger">Eliminar</button>';
+        menu.querySelector('[data-a="ren"]').onclick = () => {
+          const name = (prompt('Nuevo nombre:', seq.name) || '').trim();
+          if (name) { seq.name = name; save(); }
+          view.menu = false; render();
+        };
+        menu.querySelector('[data-a="dup"]').onclick = () => {
+          const copy = { id: 'seq_' + Date.now(), name: seq.name + ' (copia)', steps: JSON.parse(JSON.stringify(seq.steps)), parentId: seq.parentId || 'root', order: (seq.order || 0) + 0.5 };
+          data.list.splice(data.list.indexOf(seq) + 1, 0, copy);
+          save();
+          view = { name: 'edit', seqId: copy.id, menu: false, picker: null };
+          render();
+        };
+        menu.querySelector('[data-a="del"]').onclick = () => {
+          if (!confirm(`¿Eliminar "${seq.name}"?`)) return;
+          if (run && run.seqId === seq.id) stopRun('Detenida.');
+          data.list = data.list.filter(s => s !== seq);
+          save();
+          view = { name: 'home' }; render();
+        };
+        ui.appendChild(menu);
+      }
+
+      // Pasos
+      const list = document.createElement('div');
+      list.className = 'wa-sq-list';
+      if (!seq.steps.length) {
+        const empty = document.createElement('div');
+        empty.className = 'wa-sq-empty';
+        empty.textContent = 'Sin pasos todavía.';
+        list.appendChild(empty);
+      }
+      seq.steps.forEach((step, idx) => {
+        const d = describe(step);
+        const row = document.createElement('div');
+        const isCurrent = run && run.seqId === seq.id && run.idx === idx;
+        row.className = 'wa-sq-step' + (isCurrent ? ' current' : '') + (d.missing ? ' missing' : '');
+        row.innerHTML = '<span class="wa-sq-num"></span><span class="wa-sq-grip" draggable="true" title="Arrastra para mover">⠿</span><span class="wa-sq-name"></span><span class="wa-sq-icon"></span><button class="wa-sq-del" title="Quitar">✕</button>';
+        row.querySelector('.wa-sq-num').textContent = idx + 1;
+        row.querySelector('.wa-sq-name').textContent = d.label;
+        row.querySelector('.wa-sq-icon').textContent = d.icon;
+        row.querySelector('.wa-sq-del').onclick = () => {
+          if (run && run.seqId === seq.id) { notify('Detén la secuencia antes de editarla.'); return; }
+          seq.steps.splice(idx, 1); save(); render();
+        };
+
+        // Arrastrar para reordenar
+        const grip = row.querySelector('.wa-sq-grip');
+        grip.addEventListener('dragstart', e => {
+          dragIdx = idx; row.style.opacity = '0.4';
+          e.dataTransfer.effectAllowed = 'move';
+          try { e.dataTransfer.setData('text/plain', String(idx)); } catch (err) { /* ignore */ }
+        });
+        grip.addEventListener('dragend', () => { row.style.opacity = ''; dragIdx = null; });
+        row.addEventListener('dragover', e => {
+          if (dragIdx === null) return;
+          e.preventDefault();
+          const r = row.getBoundingClientRect();
+          const above = e.clientY - r.top < r.height / 2;
+          row.classList.toggle('drop-top', above);
+          row.classList.toggle('drop-bottom', !above);
+        });
+        row.addEventListener('dragleave', () => row.classList.remove('drop-top', 'drop-bottom'));
+        row.addEventListener('drop', e => {
+          e.preventDefault();
+          row.classList.remove('drop-top', 'drop-bottom');
+          if (dragIdx === null || dragIdx === idx) return;
+          if (run && run.seqId === seq.id) { notify('Detén la secuencia antes de editarla.'); return; }
+          const r = row.getBoundingClientRect();
+          const above = e.clientY - r.top < r.height / 2;
+          const [moved] = seq.steps.splice(dragIdx, 1);
+          let to = idx + (above ? 0 : 1);
+          if (dragIdx < idx) to--;
+          seq.steps.splice(to, 0, moved);
+          dragIdx = null;
+          save(); render();
+        });
+        list.appendChild(row);
+      });
+      ui.appendChild(list);
+
+      if (view.picker) ui.appendChild(renderPicker(seq));
+      else {
+        const add = document.createElement('button');
+        add.className = 'wa-sq-add';
+        add.textContent = '＋ Agregar paso';
+        add.onclick = () => { view.picker = { tab: 'text', query: '' }; render(); };
+        ui.appendChild(add);
+      }
+    }
+    let dragIdx = null;
+
+    // ---------------- Selector de pasos (Mensajes · Imágenes · Videos) ----------------
+    function folderPath(items, parentId) {
+      const parts = [];
+      let cur = items.find(i => i.type === 'folder' && i.id === parentId);
+      let guard = 0;
+      while (cur && guard++ < 20) {
+        parts.unshift(cur.name);
+        cur = items.find(i => i.type === 'folder' && i.id === cur.parentId);
+      }
+      return parts.join(' / ');
+    }
+
+    function renderPicker(seq) {
+      const { text, img, vid } = libs();
+      const tabs = [
+        { key: 'text', label: 'Mensajes', items: (text.items || []), type: 'snippet', name: i => i.title, all: text.items || [] },
+        { key: 'img', label: 'Imágenes', items: (img.items || []), type: 'image', name: i => i.name, all: img.items || [] }
+      ];
+      if (core.getVideoLibrary) tabs.push({ key: 'vid', label: 'Videos', items: (vid.items || []), type: 'video', name: i => i.name, all: vid.items || [] });
+      const tab = tabs.find(t => t.key === view.picker.tab) || tabs[0];
+
+      const box = document.createElement('div');
+      box.className = 'wa-sq-picker';
+
+      const tabRow = document.createElement('div');
+      tabRow.className = 'wa-sq-tabs';
+      tabs.forEach(t => {
+        const b = document.createElement('button');
+        b.className = 'wa-sq-tab' + (t === tab ? ' active' : '');
+        b.textContent = t.label;
+        b.onclick = () => { view.picker.tab = t.key; render(); };
+        tabRow.appendChild(b);
+      });
+      const close = document.createElement('button');
+      close.className = 'wa-sq-back';
+      close.textContent = '✕';
+      close.title = 'Cerrar';
+      close.onclick = () => { view.picker = null; render(); };
+      tabRow.appendChild(close);
+      box.appendChild(tabRow);
+
+      const search = document.createElement('input');
+      search.className = 'wa-sq-search';
+      search.placeholder = 'Buscar…';
+      search.value = view.picker.query;
+      box.appendChild(search);
+
+      const results = document.createElement('div');
+      results.className = 'wa-sq-results';
+      box.appendChild(results);
+
+      function fill() {
+        results.innerHTML = '';
+        const q = fold(view.picker.query.trim());
+        const entries = tab.items
+          .filter(i => i.type === tab.type)
+          .filter(i => !q || fold(tab.name(i)).includes(q))
+          .map(i => ({ item: i, path: folderPath(tab.all, i.parentId) }))
+          .sort((a, b) => a.path.localeCompare(b.path) || (a.item.order || 0) - (b.item.order || 0));
+        if (!entries.length) {
+          const e = document.createElement('div');
+          e.className = 'wa-sq-empty';
+          e.textContent = q ? 'Nada coincide.' : 'Esta biblioteca está vacía.';
+          results.appendChild(e);
+          return;
+        }
+        let lastPath = null;
+        entries.forEach(({ item, path }) => {
+          if (path !== lastPath) {
+            if (path) {
+              const f = document.createElement('div');
+              f.className = 'wa-sq-folder';
+              f.textContent = '📁 ' + path;
+              results.appendChild(f);
+            }
+            lastPath = path;
+          }
+          const p = document.createElement('div');
+          p.className = 'wa-sq-pick';
+          p.textContent = tab.name(item) || '(sin nombre)';
+          p.onclick = () => {
+            if (run && run.seqId === seq.id) { notify('Detén la secuencia antes de editarla.'); return; }
+            const step = tab.type === 'snippet' ? { type: 'snippet', snippetId: item.id }
+              : tab.type === 'image' ? { type: 'image', imageId: item.id }
+              : { type: 'video', videoId: item.id };
+            seq.steps.push(step);
+            save();
+            view.picker = null;
+            render();
+          };
+          results.appendChild(p);
+        });
+      }
+      fill();
+      search.addEventListener('input', () => { view.picker.query = search.value; fill(); });
+      search.addEventListener('keydown', e => { if (e.key === 'Escape') { view.picker = null; render(); } });
+      setTimeout(() => search.focus(), 0);
+      return box;
+    }
+
+    // ================= WhatsApp: cargar pasos =================
+    const findComposer = () => qVisible(SEL.composer, e => !isOurUI(e));
+    const composerText = () => { const c = findComposer(); return c ? (c.textContent || '').trim() : ''; };
+    const findPreviewSendBtn = () => qVisible(SEL.sendBtn, e => !e.closest('#main footer') && !isOurUI(e));
+    const visibleEditables = () => new Set([...document.querySelectorAll('[contenteditable="true"]')].filter(isVisible));
+    const visibleSendBtns = () => new Set(SEL.sendBtn.flatMap(s => [...document.querySelectorAll(s)]).filter(isVisible));
+
+    function chatKey() {
+      const el = qVisible(SEL.chatTitle);
+      return el ? (el.getAttribute('title') || el.textContent || '').trim() : (document.querySelector('#main') ? '#main' : '');
+    }
+
+    // Último mensaje SALIENTE del chat (para saber cuándo WhatsApp realmente envió)
+    function lastOutgoing() {
+      const els = document.querySelectorAll('#main [data-id^="true_"], #main .message-out');
+      if (!els.length) return null;
+      const el = els[els.length - 1];
+      return (el.getAttribute('data-id') || (el.closest('[data-id]') && el.closest('[data-id]').getAttribute('data-id'))) || el;
+    }
+
+    async function loadText(text) {
+      const before = composerText();
+      if (core.injectTextToChat) core.injectTextToChat(text, false);
+      else {
+        const box = findComposer();
+        if (!box) return false;
+        box.focus();
+        await sleep(60);
+        document.execCommand('insertText', false, text);
+      }
+      // Confirma que el texto quedó en la caja
+      const t0 = Date.now();
+      while (Date.now() - t0 < 1500) {
+        if (composerText() && composerText() !== before) return true;
+        await sleep(100);
+      }
+      return !!composerText();
+    }
+
+    function clearComposer() {
+      const box = findComposer();
+      if (!box) return;
+      box.focus();
+      document.execCommand('selectAll', false, null);
+      document.execCommand('delete', false, null);
+    }
+
+    function pressEscape() {
+      const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true };
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', opts));
+    }
+
+    // --- adjuntar archivo (mismo método que el bloque de videos: pegar → menú → arrastrar) ---
+    function makeDT(file) { const dt = new DataTransfer(); dt.items.add(file); return dt; }
+
+    async function viaPaste(file) {
+      const box = findComposer();
+      if (!box) return null;
+      box.focus();
+      await sleep(80);
+      const dt = makeDT(file);
+      let ev;
+      try { ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); } catch (e) { ev = null; }
+      if (!ev || !ev.clipboardData || !ev.clipboardData.files || !ev.clipboardData.files.length) {
+        ev = new Event('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'clipboardData', { value: dt });
+      }
+      box.dispatchEvent(ev);
+      return () => {};
+    }
+    function findMediaInput(file) {
+      const want = file.type.startsWith('video') ? /video/ : /image/;
+      return [...document.querySelectorAll('input[type="file"]')].find(i => want.test(i.accept || '') && !isOurUI(i));
+    }
+    async function viaInput(file) {
+      let input = findMediaInput(file);
+      if (!input) {
+        const btn = qVisible(SEL.attachBtn, e => !isOurUI(e));
+        if (!btn) return null;
+        clickable(btn).click();
+        const t0 = Date.now();
+        while (!input && Date.now() - t0 < 1500) { await sleep(100); input = findMediaInput(file); }
+      }
+      if (!input) { pressEscape(); return null; }
+      input.files = makeDT(file).files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return () => pressEscape();
+    }
+    async function viaDrop(file) {
+      const main = document.querySelector('#main');
+      if (!main) return null;
+      const r = main.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      let target = document.elementFromPoint(x, y);
+      if (!target || !main.contains(target)) target = main;
+      const dt = makeDT(file);
+      const fire = (el, type) => el.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, dataTransfer: dt }));
+      fire(target, 'dragenter'); fire(target, 'dragover');
+      await sleep(250);
+      let dropEl = document.elementFromPoint(x, y) || target;
+      if (isOurUI(dropEl)) dropEl = target;
+      fire(dropEl, 'dragenter'); fire(dropEl, 'dragover'); fire(dropEl, 'drop');
+      return () => { try { fire(dropEl, 'dragleave'); fire(target, 'dragleave'); } catch (e) { /* ignore */ } };
+    }
+    const METHODS = { paste: viaPaste, input: viaInput, drop: viaDrop };
+
+    async function waitForPreview(beforeEdit, beforeSend, timeout) {
+      const t0 = Date.now();
+      let seenAt = 0;
+      while (Date.now() - t0 < timeout) {
+        const fresh = [...document.querySelectorAll('[contenteditable="true"]')]
+          .find(el => isVisible(el) && !beforeEdit.has(el) && !el.closest('#main footer') && !isOurUI(el));
+        if (fresh) return { opened: true, captionEl: fresh };
+        const btn = findPreviewSendBtn();
+        if (btn && !beforeSend.has(btn)) {
+          if (!seenAt) seenAt = Date.now();
+          else if (Date.now() - seenAt > 800) return { opened: true, captionEl: null };
+        }
+        await sleep(200);
+      }
+      return { opened: false, captionEl: null };
+    }
+
+    async function attachFile(file, caption) {
+      const remembered = localStorage.getItem(METHOD_KEY);
+      const order = ['paste', 'input', 'drop'];
+      if (order.includes(remembered)) order.sort((a, b) => (b === remembered) - (a === remembered));
+      const timeout = Math.min(20000, 6000 + (file.size / 1048576) * 150);
+      log(`adjuntando "${file.name}" (${(file.size / 1048576).toFixed(1)} MB) — orden: ${order.join(' → ')}`);
+
+      for (const method of order) {
+        const beforeEdit = visibleEditables(), beforeSend = visibleSendBtns();
+        let cleanup = null;
+        try { cleanup = await METHODS[method](file); } catch (e) { log(`${method}: error`, e.message); pressEscape(); continue; }
+        if (!cleanup) { log(`${method}: no disponible`); continue; }
+        let preview = await waitForPreview(beforeEdit, beforeSend, timeout);
+        if (!preview.opened) {
+          cleanup();
+          await sleep(400);
+          const late = findPreviewSendBtn();
+          if (!(late && !beforeSend.has(late))) { log(`${method}: no abrió la vista previa`); continue; }
+          preview = { opened: true, captionEl: null };
+        }
+        localStorage.setItem(METHOD_KEY, method);
+        log(`vista previa abierta con "${method}"`);
+        if (caption) {
+          let capEl = preview.captionEl;
+          if (!capEl) {
+            await sleep(300);
+            capEl = [...document.querySelectorAll('[contenteditable="true"]')].find(el => isVisible(el) && !el.closest('#main footer') && !isOurUI(el));
+          }
+          if (capEl) {
+            capEl.focus();
+            await sleep(60);
+            document.execCommand('insertText', false, caption);
+          } else {
+            try { await navigator.clipboard.writeText(caption); notify('El texto quedó copiado: pégalo en la descripción.'); } catch (e) { /* ignore */ }
+          }
+          preview.captionEl = capEl || null;
+        }
+        return preview;
+      }
+      return { opened: false, captionEl: null };
+    }
+    const previewOpen = p => (p.captionEl && isVisible(p.captionEl)) || !!findPreviewSendBtn();
+
+    function extFor(type) {
+      const m = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/3gpp': '.3gp' };
+      return m[type] || '';
+    }
+
+    // Carga un paso en el chat SIN enviarlo. → { ok, kind:'text'|'media', preview?, reason? }
+    async function loadStep(step) {
+      const { text, img, vid } = libs();
+      let caption = '', blob = null, fileName = 'archivo', mime = '';
+
+      if (step.type === 'snippet') {
+        const s = (text.items || []).find(i => i.id === step.snippetId);
+        if (!s) return { ok: false, reason: 'Este mensaje fue borrado.' };
+        if (s.imageId) {
+          const im = (img.items || []).find(i => i.id === s.imageId);
+          if (im && core.getSavedImageBlob) { blob = await core.getSavedImageBlob(im.id); fileName = im.name || 'imagen'; }
+          caption = s.text || '';
+          if (!blob) return (await loadText(s.text || '')) ? { ok: true, kind: 'text' } : { ok: false, reason: 'No encontré la caja de mensaje.' };
+        } else {
+          return (await loadText(s.text || '')) ? { ok: true, kind: 'text' } : { ok: false, reason: 'No encontré la caja de mensaje.' };
+        }
+      } else if (step.type === 'image') {
+        const im = (img.items || []).find(i => i.id === step.imageId);
+        if (!im) return { ok: false, reason: 'Esta imagen fue borrada.' };
+        blob = core.getSavedImageBlob ? await core.getSavedImageBlob(im.id) : null;
+        if (!blob) return { ok: false, reason: 'No encontré el archivo de la imagen.' };
+        caption = im.caption || ''; fileName = im.name || 'imagen';
+      } else if (step.type === 'video') {
+        const v = (vid.items || []).find(i => i.id === step.videoId);
+        if (!v) return { ok: false, reason: 'Este video fue borrado.' };
+        blob = core.getSavedVideoBlob ? await core.getSavedVideoBlob(v.id) : null;
+        if (!blob) return { ok: false, reason: 'No encontré el archivo del video.' };
+        caption = v.caption || ''; fileName = v.fileName || v.name || 'video'; mime = v.mime || '';
+      }
+
+      mime = mime || blob.type || (step.type === 'video' ? 'video/mp4' : 'image/jpeg');
+      if (!/\.[a-z0-9]{2,4}$/i.test(fileName)) fileName += extFor(mime);
+      const file = new File([blob], fileName, { type: mime });
+      const preview = await attachFile(file, caption);
+      if (!preview.opened) return { ok: false, reason: 'WhatsApp no abrió la vista previa.' };
+      return { ok: true, kind: 'media', preview };
+    }
+
+    // ================= Ejecución (tú presionas Enter) =================
+    let run = null; // { seqId, steps, idx, chat, action }
+
+    function startRun(seq) {
+      if (run) { notify('Ya hay una secuencia en curso.'); return; }
+      if (!document.querySelector('#main')) { notify('Abre un chat primero.'); return; }
+      const steps = seq.steps.slice();
+      if (!steps.length) { notify('Esta secuencia no tiene pasos.'); return; }
+      run = { seqId: seq.id, name: seq.name, steps, idx: 0, chat: chatKey(), action: null };
+      log(`inicio "${seq.name}" en chat "${run.chat}"`);
+      execute(run);
+    }
+
+    function stopRun(msg) {
+      if (!run) return;
+      run.action = 'stop';
+      if (msg) showBar({ text: msg, done: true });
+    }
+
+    // Espera a que ocurra algo: enviado / saltar / detener / cambio de chat / no enviado
+    // ---- Detectar que TÚ enviaste: Enter (sin Shift) o clic en el botón enviar ----
+    let sendIntentAt = 0;
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      const t = e.target;
+      if (t && t.closest && t.closest('[contenteditable="true"]') && !isOurUI(t)) sendIntentAt = Date.now();
+    }, true);
+    document.addEventListener('mousedown', e => {
+      const t = e.target;
+      if (!t || !t.closest || isOurUI(t)) return;
+      if (SEL.sendBtn.some(sel => t.closest(sel))) sendIntentAt = Date.now();
+    }, true);
+
+    // Espera a que ocurra algo: enviado / saltar / detener / cambio de chat / no enviado
+    async function waitOutcome(r, loaded, beforeOut) {
+      const loadedAt = Date.now();
+      let goneSince = 0;
+      while (true) {
+        if (r.action) { const a = r.action; r.action = null; return a; }
+        if (chatKey() !== r.chat) return 'chat-changed';
+
+        // Señal extra: apareció un mensaje saliente nuevo
+        const out = lastOutgoing();
+        if (out && beforeOut && out !== beforeOut) { log('enviado (mensaje nuevo en el chat)'); return 'sent'; }
+
+        // Señal principal: lo cargado desapareció (caja vacía / vista previa cerrada)
+        const gone = loaded.kind === 'text' ? !composerText() : !previewOpen(loaded.preview);
+        if (gone) {
+          if (!goneSince) goneSince = Date.now();
+          // …justo después de tu Enter o clic en enviar → enviado
+          if (sendIntentAt >= loadedAt && goneSince - sendIntentAt < 4000) { log('enviado (Enter / botón enviar)'); return 'sent'; }
+          // Desapareció sin Enter: espera un poco por si el mensaje aparece, si no → no se envió
+          if (Date.now() - goneSince > (loaded.kind === 'media' ? 15000 : 3000)) return 'not-sent';
+        } else goneSince = 0;
+        await sleep(150);
+      }
+    }
+
+    async function waitChoice(r) {
+      while (!r.action) {
+        if (chatKey() !== r.chat) return 'chat-changed';
+        await sleep(150);
+      }
+      const a = r.action; r.action = null; return a;
+    }
+
+    async function execute(r) {
+      renderSafe();
+      try {
+        while (r.idx < r.steps.length) {
+          const step = r.steps[r.idx];
+          const label = describe(step).label;
+          showBar({ count: true, text: 'Cargando…', label });
+          renderSafe();
+
+          const beforeOut = lastOutgoing();
+          const loaded = await loadStep(step);
+          if (r.action === 'stop') break;
+
+          if (!loaded.ok) {
+            log(`paso ${r.idx + 1} no se pudo cargar: ${loaded.reason}`);
+            showBar({ count: true, text: loaded.reason, label, warn: true, retry: true });
+            const a = await waitChoice(r);
+            if (a === 'retry') continue;
+            if (a === 'skip') { r.idx++; continue; }
+            if (a === 'chat-changed') { showBar({ text: 'Cambiaste de chat — secuencia detenida.', warn: true, done: true }); return; }
+            break;
+          }
+
+          showBar({ count: true, enter: true, label });
+          const outcome = await waitOutcome(r, loaded, beforeOut);
+          log(`paso ${r.idx + 1}: ${outcome}`);
+
+          if (outcome === 'sent') {
+            r.idx++;
+            // Cambia la barra al instante para que no parezca que hay que volver a presionar Enter
+            if (r.idx < r.steps.length) { showBar({ count: true, text: 'Cargando…' }); renderSafe(); await sleep(700); }
+            continue;
+          }
+          if (outcome === 'skip') {
+            if (loaded.kind === 'text') clearComposer(); else if (previewOpen(loaded.preview)) pressEscape();
+            await sleep(400);
+            r.idx++; continue;
+          }
+          if (outcome === 'chat-changed') { showBar({ text: 'Cambiaste de chat — secuencia detenida.', warn: true, done: true }); return; }
+          if (outcome === 'not-sent') {
+            showBar({ count: true, text: '¿No se envió?', label, warn: true, retry: true, cont: true });
+            const a = await waitChoice(r);
+            if (a === 'retry') continue;
+            if (a === 'skip') { r.idx++; continue; }
+            if (a === 'chat-changed') { showBar({ text: 'Cambiaste de chat — secuencia detenida.', warn: true, done: true }); return; }
+            break;
+          }
+          break; // stop
+        }
+        if (r.idx >= r.steps.length) showBar({ text: '✅ Listo', done: true });
+        else showBar({ text: 'Detenida.', done: true });
+      } catch (err) {
+        console.error('[secuencias]', err);
+        showBar({ text: 'Error: ' + err.message, warn: true, done: true });
+      } finally {
+        if (run === r) run = null;
+        renderSafe();
+      }
+    }
+
+    // ---------------- Barra inferior ----------------
+    let barTimer = null;
+    function showBar(o) {
+      let bar = document.getElementById('wa-sq-bar');
+      if (!bar) { bar = document.createElement('div'); bar.id = 'wa-sq-bar'; document.body.appendChild(bar); }
+      clearTimeout(barTimer);
+      bar.className = (o.warn ? 'warn ' : '') + (o.done ? 'done' : '');
+      bar.innerHTML = '';
+      const r = run;
+
+      if (o.count && r) {
+        const c = document.createElement('span');
+        c.className = 'count';
+        c.textContent = `${r.idx + 1} / ${r.steps.length}`;
+        c.title = o.label || '';
+        bar.appendChild(c);
+      }
+      const msg = document.createElement('span');
+      msg.className = 'msg';
+      if (o.enter) msg.innerHTML = 'Presiona <span class="key">Enter ↵</span>';
+      else msg.textContent = o.text || '';
+      bar.appendChild(msg);
+
+      const btn = (txt, action, cls) => {
+        const b = document.createElement('button');
+        b.textContent = txt;
+        if (cls) b.className = cls;
+        b.onclick = () => { if (run) run.action = action; };
+        bar.appendChild(b);
+      };
+      if (!o.done) {
+        if (o.cont) btn('✓ Sí se envió', 'skip');   // por si la detección falla: seguir con el siguiente
+        if (o.retry) btn('↻ Reintentar', 'retry');
+        if (!o.cont) btn('Saltar', 'skip');
+        btn('■', 'stop', 'stop');
+      } else {
+        barTimer = setTimeout(() => bar.remove(), 2500);
+      }
+    }
+
+    function renderSafe() {
+      // No redibujar mientras escribes en el buscador
+      if (view.picker && document.activeElement && document.activeElement.classList.contains('wa-sq-search')) return;
+      render();
+    }
+
+    // ---------------- Montaje ----------------
     function mountCard(attemptsLeft) {
       attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
       if (typeof core.registerMenu === 'function') {
-        core.registerMenu('right', '🔗 Message Sequence', ui, '⠿', 'sequence-builder');
-        if (!sequences.activeId && sequences.list.length) sequences.activeId = sequences.list[0].id;
-        refreshSequenceSelect(); refreshSnippetOptions(); renderSteps();
+        core.registerMenu('right', '🔗 Secuencias', ui, '⠿', 'sequence-builder');
+        render();
       } else if (attemptsLeft > 0) {
         setTimeout(() => mountCard(attemptsLeft - 1), 200);
       }
     }
     mountCard();
-    
-    core.on('textlib:changed', () => { refreshSnippetOptions(); renderSteps(); });
-    core.on('imglib:changed', () => { refreshSnippetOptions(); renderSteps(); });
-    
+
+    if (core.on) {
+      ['textlib:changed', 'imglib:changed', 'vidlib:changed'].forEach(evt => core.on(evt, () => renderSafe()));
+    }
     core.emit('block:ready', { id: 'sequenceBuilderModule' });
   }
 });
@@ -2304,298 +2875,492 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Google Sheets Sync (v2)
+   BLOCK: Google Sheets Sync (v4)
+   ============================================================ */
+/* ============================================================
+   BLOCK: Sync Center WhatsApp (v1 — bunny.net)
+   ------------------------------------------------------------
+   Mismos botones que el Sync Center de Instagram:
+     📝 Master  → ☁️ Push / 📥 Pull
+     🖼️ Images  → ☁️ Smart Backup / 📥 Pull / ♻️ Force
+     🎬 Videos  → ☁️ Smart Backup / 📥 Pull / ♻️ Force
+
+   QUÉ SE SINCRONIZA
+   - Master (un JSON): TODAS las claves del kit que empiezan con "wa_"
+     (secuencias, mensajes, lista de imágenes, lista de videos,
+     etiquetas, layout del sidebar, posiciones…). Excepto:
+       · la contraseña de bunny (wa_bunny_sync_prefs_v1)
+       · "qué método de adjuntar funciona" (es propio de cada PC)
+   - Images: los archivos de imagen (base de datos del kit, "images")
+   - Videos: los archivos de video (base "wa_video_library_db")
+   Los archivos se identifican por su ID permanente (img_…, vid_…):
+   renombrar o mover algo nunca lo vuelve a subir.
+
+   EN BUNNY (misma zona que Instagram sirve; todo va en wa_toolkit/)
+     wa_toolkit/master_config.json
+     wa_toolkit/images/<id>.jpg|png|webp
+     wa_toolkit/videos/<id>.mp4|mov
+
+   EN UN PC NUEVO: 1) Pull Master (recarga)  2) Pull Images  3) Pull Videos
+
+   ENCABEZADO TAMPERMONKEY (ya lo tienes):
+     // @grant   GM_xmlhttpRequest
+     // @connect bunnycdn.com
    ============================================================ */
 LegoCore.registerBlock({
-  id: 'sheetsSyncModule',
+  id: 'waCloudSyncCenterModule',
   init(core) {
-    const TEXT_KEY = 'wa_text_library_v1';
-    const IMAGE_KEY = 'wa_image_library_v1';
-    const LAST_URL_KEY = 'wa_sync_last_url';
+    const PREFS_KEY = 'wa_bunny_sync_prefs_v1';
+    const ROOT = 'wa_toolkit';
+    const EXCLUDED_KEYS = new Set([PREFS_KEY, 'wa_seq_attach_method', 'wa_vlc_attach_method']);
 
-    function escapeCSV(str) {
-      if (str === null || str === undefined) return '""';
-      return `"${str.toString().replace(/"/g, '""')}"`;
-    }
-    function parseCSV(str) {
-      const result = []; let row = [], inQuotes = false, val = '';
-      for (let i = 0; i < str.length; i++) {
-        const char = str[i], nextChar = str[i + 1];
-        if (inQuotes) {
-          if (char === '"' && nextChar === '"') { val += '"'; i++; }
-          else if (char === '"') { inQuotes = false; }
-          else { val += char; }
-        } else {
-          if (char === '"') inQuotes = true;
-          else if (char === ',') { row.push(val); val = ''; }
-          else if (char === '\n' || char === '\r') {
-            if (char === '\r' && nextChar === '\n') i++;
-            row.push(val); result.push(row); row = []; val = '';
-          } else val += char;
-        }
-      }
-      if (val !== '' || row.length > 0) { row.push(val); result.push(row); }
-      return result;
-    }
-    function gmFetchText(url) {
+    const IMG_LIST_KEY = 'wa_image_library_v1';
+    const VID_LIST_KEY = 'wa_video_library_v1';
+    const VIDEO_DB_NAME = 'wa_video_library_db';
+    const VIDEO_STORE = 'videos';
+
+    let prefs;
+    try { prefs = JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch (e) { prefs = {}; }
+    prefs = Object.assign({ zoneName: '', apiKey: '', region: 'default' }, prefs);
+    const savePrefs = () => localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    const fmtMB = b => ((b || 0) / 1048576).toFixed(1) + ' MB';
+
+    // ================= Bunny API =================
+    class ReadOnlyError extends Error {}
+
+    function bunnyRequest(method, path, data = null, responseType = '', onProgress = null) {
       return new Promise((resolve, reject) => {
-        if (typeof GM_xmlhttpRequest === 'undefined') { reject(new Error('GM_xmlhttpRequest not available. Add @grant GM_xmlhttpRequest to your userscript header.')); return; }
-        GM_xmlhttpRequest({
-          method: 'GET', url,
-          onload: (response) => { if (response.status >= 200 && response.status < 300) resolve(response.responseText); else reject(new Error('Request failed with status ' + response.status)); },
-          onerror: () => reject(new Error('Network error while fetching the sheet.')),
-          ontimeout: () => reject(new Error('Request timed out.'))
-        });
-      });
-    }
-    function readFileAsText(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Could not read the file.'));
-        reader.readAsText(file, 'utf-8');
-      });
-    }
-    function dataURLtoBlob(dataUrl) {
-      const [meta, base64] = dataUrl.split(',');
-      const mime = (meta.match(/:(.*?);/) || [, 'image/jpeg'])[1];
-      const bin = atob(base64);
-      const arr = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-      return new Blob([arr], { type: mime });
-    }
+        if (!prefs.zoneName || !prefs.apiKey) return reject(new Error('Faltan la zona o la contraseña.'));
+        if (typeof GM_xmlhttpRequest === 'undefined') return reject(new Error('Falta "// @grant GM_xmlhttpRequest" en el encabezado.'));
+        const host = prefs.region === 'default' ? 'storage.bunnycdn.com' : `${prefs.region}.storage.bunnycdn.com`;
+        const url = `https://${host}/${encodeURIComponent(prefs.zoneName)}/${String(path || '').replace(/^\/+/, '')}`;
 
-    // Shared by BOTH the Google Sheets import and the manual CSV import.
-    // Parses csvText, rebuilds the text + image libraries, and overwrites
-    // localStorage. Throws on any parsing/validation problem.
-    function importCsvTextAndOverwrite(csvText) {
-      if (csvText.includes('<html') && (csvText.includes('sign in') || csvText.includes('ServiceLogin'))) {
-        throw new Error("Sheet is private. Change sharing settings to 'Anyone with the link can view'.");
-      }
-      const rows = parseCSV(csvText);
-      if (rows.length < 2) throw new Error('CSV appears empty or invalid.');
-
-      const newTextLib = { items: [], tags: [] };
-      const newImageLib = { items: [], tags: [] };
-      const textFolderMap = {}, imageFolderMap = {}, tagMap = {}, imageNameMap = {};
-      const palette = ['#25d366', '#0284c7', '#f77f00', '#9d0208', '#7209b7', '#10b981', '#f43f5e'];
-      let tagColorIndex = 0;
-
-      const db = core.getDb();
-      function storeImageBlob(id, dataUrl) {
-        if (!db) return;
-        const blob = dataURLtoBlob(dataUrl);
-        const tx = db.transaction(['images'], 'readwrite');
-        tx.objectStore('images').put({ id, blob, order: Date.now() });
-      }
-
-      function ensureImage(name, group, dataUrl, rowIndex) {
-        if (!name || !dataUrl) return '';
-        if (imageNameMap[name]) return imageNameMap[name];
-        if (!imageFolderMap[group]) {
-          const fid = 'ifld_' + Date.now() + '_' + rowIndex;
-          imageFolderMap[group] = fid;
-          newImageLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: rowIndex });
-        }
-        const id = 'img_' + Date.now() + '_' + rowIndex;
-        newImageLib.items.push({ id, type: 'image', parentId: imageFolderMap[group], name, thumbnail: dataUrl, tags: [], order: rowIndex });
-        storeImageBlob(id, dataUrl);
-        imageNameMap[name] = id;
-        return id;
-      }
-
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        if (!row || row.length < 2 || !row[1] || !row[1].trim()) continue;
-        const type = (row[0] || 'snippet').trim().toLowerCase();
-        const name = row[1].trim();
-        const group = (row[2] || '').trim() || 'General';
-        const tagsRaw = (row[3] || '').trim();
-        const command = (row[4] || '').trim();
-        const text = row[5] || '';
-        const imageName = (row[6] || '').trim();
-        const imageData = row[7] || '';
-
-        if (type === 'image') {
-          ensureImage(name, group, imageData, i);
-          continue;
-        }
-
-        if (!textFolderMap[group]) {
-          const fid = 'fld_' + Date.now() + '_' + i;
-          textFolderMap[group] = fid;
-          newTextLib.items.push({ id: fid, type: 'folder', parentId: 'root', name: group, collapsed: false, order: i });
-        }
-        const tagIds = [];
-        if (tagsRaw) {
-          tagsRaw.split('|').map(t => t.trim()).filter(Boolean).forEach(tName => {
-            if (!tagMap[tName]) {
-              const tid = 'tag_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-              tagMap[tName] = tid;
-              newTextLib.tags.push({ id: tid, name: tName, color: palette[tagColorIndex % palette.length] });
-              tagColorIndex++;
+        const opts = {
+          method, url,
+          headers: { AccessKey: prefs.apiKey, accept: 'application/json' },
+          onload: res => {
+            if (res.status >= 200 && res.status < 300) {
+              if (responseType) return resolve(res.response);
+              try { resolve(res.responseText ? JSON.parse(res.responseText) : null); } catch (e) { resolve(res.responseText); }
+            } else if (res.status === 401 && method !== 'GET') {
+              reject(new ReadOnlyError('Esta contraseña es solo de lectura: Pull funciona, Push/Backup no.'));
+            } else if (res.status === 401) {
+              reject(new Error('Contraseña o zona incorrecta (401).'));
+            } else if (res.status === 404) {
+              const err = new Error('No existe en la nube (404).'); err.status = 404; reject(err);
+            } else {
+              reject(new Error(`Error ${res.status} de bunny.`));
             }
-            tagIds.push(tagMap[tName]);
-          });
+          },
+          onerror: () => reject(new Error('Error de red. ¿Está "@connect bunnycdn.com" en el encabezado?')),
+          ontimeout: () => reject(new Error('Bunny tardó demasiado en responder.'))
+        };
+        if (data) {
+          opts.data = data;
+          opts.headers['Content-Type'] = 'application/octet-stream';
+          if (onProgress) opts.upload = { onprogress: e => { if (e.lengthComputable) onProgress(e.loaded / e.total); } };
+        } else if (onProgress) {
+          opts.onprogress = e => { if (e.lengthComputable && e.total) onProgress(e.loaded / e.total); };
         }
-        const linkedImageId = imageName && imageData ? ensureImage(imageName, group, imageData, i) : '';
-        newTextLib.items.push({
-          id: 'snip_' + Date.now() + '_' + i, type: 'snippet', parentId: textFolderMap[group],
-          title: name, text, tags: tagIds, customCommand: command, imageId: linkedImageId, order: i
-        });
-      }
-
-      localStorage.setItem(TEXT_KEY, JSON.stringify(newTextLib));
-      localStorage.setItem(IMAGE_KEY, JSON.stringify(newImageLib));
-    }
-
-    function openSyncModal() {
-      if (document.getElementById('wa-sync-modal')) return;
-      const savedUrl = localStorage.getItem(LAST_URL_KEY) || '';
-      const overlay = document.createElement('div');
-      overlay.className = 'wa-tlp-modal-overlay';
-      overlay.id = 'wa-sync-modal';
-      overlay.innerHTML = `
-        <div class="wa-tlp-modal" style="width:420px; max-width:92vw;">
-          <h3>☁️ Google Sheets Sync</h3>
-          <div style="background:rgba(255,255,255,0.05); padding:10px; border-radius:6px;">
-            <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">1. Export Saved Messages + Saved Images to a CSV file, then upload it into Google Sheets.</div>
-            <button id="wa-sync-export-btn" class="wa-base-btn" style="background:#0284c7;">📤 Export to CSV</button>
-          </div>
-          <div style="background:rgba(244,63,94,0.05); border:1px solid rgba(244,63,94,0.2); padding:10px; border-radius:6px;">
-            <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">2. Restore from a public Google Sheets URL.<br><span style="color:#f43f5e; font-weight:bold;">⚠️ This overwrites both libraries!</span></div>
-            <input type="text" id="wa-sync-import-url" class="wa-tlp-input" placeholder="https://docs.google.com/spreadsheets/d/.../edit" value="${savedUrl}" style="margin-bottom:8px;">
-            <button id="wa-sync-import-btn" class="wa-base-btn" style="background:#dc2626;">📥 Overwrite &amp; Import</button>
-          </div>
-          <div style="background:rgba(244,63,94,0.05); border:1px solid rgba(244,63,94,0.2); padding:10px; border-radius:6px;">
-            <div style="font-size:11px; color:#94a3b8; margin-bottom:8px;">3. Or restore from a local CSV file (upload or paste).<br><span style="color:#f43f5e; font-weight:bold;">⚠️ This overwrites both libraries!</span></div>
-            <input type="file" id="wa-sync-import-file" accept=".csv,text/csv" style="width:100%; font-size:11px; margin-bottom:8px; box-sizing:border-box;">
-            <textarea id="wa-sync-import-paste" class="wa-tlp-input" rows="4" placeholder="...or paste the CSV contents here" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:10.5px; margin-bottom:8px; resize:vertical;"></textarea>
-            <button id="wa-sync-import-csv-btn" class="wa-base-btn" style="background:#dc2626;">📥 Overwrite &amp; Import CSV</button>
-          </div>
-          <button id="wa-sync-close-btn" class="wa-hide-btn">Close</button>
-        </div>
-      `;
-      document.body.appendChild(overlay);
-
-      overlay.querySelector('#wa-sync-export-btn').onclick = () => {
-        const textLib = JSON.parse(localStorage.getItem(TEXT_KEY)) || { items: [], tags: [] };
-        const imageLib = JSON.parse(localStorage.getItem(IMAGE_KEY)) || { items: [], tags: [] };
-
-        const textFolders = {}; textLib.items.filter(i => i.type === 'folder').forEach(f => textFolders[f.id] = f.name);
-        const tagNames = {}; textLib.tags.forEach(t => tagNames[t.id] = t.name);
-        const imageFolders = {}; imageLib.items.filter(i => i.type === 'folder').forEach(f => imageFolders[f.id] = f.name);
-        const imagesById = {}; imageLib.items.filter(i => i.type === 'image').forEach(img => imagesById[img.id] = img);
-
-        let csv = 'Type,Name,Group,Tags,Command,Text,ImageName,ImageData\n';
-
-        imageLib.items.filter(i => i.type === 'image').forEach(img => {
-          const group = imageFolders[img.parentId] || 'General';
-          csv += ['image', img.name, group, '', '', '', '', img.thumbnail].map(escapeCSV).join(',') + '\n';
-        });
-
-        textLib.items.filter(i => i.type === 'snippet').forEach(snip => {
-          const group = textFolders[snip.parentId] || 'General';
-          const tags = (snip.tags || []).map(id => tagNames[id]).filter(Boolean).join('|');
-          const linkedImg = snip.imageId ? imagesById[snip.imageId] : null;
-          csv += ['snippet', snip.title, group, tags, snip.customCommand || '', snip.text || '', linkedImg ? linkedImg.name : '', linkedImg ? linkedImg.thumbnail : '']
-            .map(escapeCSV).join(',') + '\n';
-        });
-
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `WA_Toolkit_Backup_${Date.now()}.csv`;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      };
-
-      overlay.querySelector('#wa-sync-import-btn').onclick = async () => {
-        const urlInput = overlay.querySelector('#wa-sync-import-url').value.trim();
-        if (!urlInput) return alert('Please enter a Google Sheets URL.');
-        localStorage.setItem(LAST_URL_KEY, urlInput);
-
-        const match = urlInput.match(/\/d\/([a-zA-Z0-9-_]+)/);
-        if (!match) return alert('Invalid Google Sheets URL. Make sure you copy the full browser link.');
-        const docId = match[1];
-        const gidMatch = urlInput.match(/gid=([0-9]+)/);
-        const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : '';
-        const fetchUrl = `https://docs.google.com/spreadsheets/d/${docId}/export?format=csv${gidParam}`;
-
-        if (!confirm('⚠️ WARNING: This will permanently DELETE and OVERWRITE your Saved Messages AND Saved Images with the data from the Google Sheet. Are you absolutely sure?')) return;
-
-        const btn = overlay.querySelector('#wa-sync-import-btn');
-        btn.innerText = '⏳ Fetching...'; btn.disabled = true;
-
-        try {
-          const csvText = await gmFetchText(fetchUrl);
-          importCsvTextAndOverwrite(csvText);
-          alert('✅ Import successful! Reloading page to apply changes.');
-          window.location.reload();
-        } catch (err) {
-          console.error(err);
-          alert('Import failed: ' + err.message + "\n\nEnsure Google Sheet sharing is set to 'Anyone with the link can view'.");
-          btn.innerText = '📥 Overwrite & Import'; btn.disabled = false;
-        }
-      };
-
-      // Uploading a file auto-fills the paste box (so it can be double-checked)
-      // but does NOT auto-import -- the user still clicks "Overwrite & Import CSV".
-      overlay.querySelector('#wa-sync-import-file').addEventListener('change', async (e) => {
-        const file = e.target.files && e.target.files[0];
-        if (!file) return;
-        try {
-          const text = await readFileAsText(file);
-          overlay.querySelector('#wa-sync-import-paste').value = text;
-        } catch (err) {
-          alert(err.message);
-        }
+        if (responseType) opts.responseType = responseType;
+        GM_xmlhttpRequest(opts);
       });
+    }
 
-      overlay.querySelector('#wa-sync-import-csv-btn').onclick = async () => {
-        const csvText = overlay.querySelector('#wa-sync-import-paste').value;
-        if (!csvText || !csvText.trim()) return alert('Upload a .csv file or paste the CSV contents first.');
+    // Lista los archivos de una carpeta → [{ id, name, path }]
+    async function listCloud(folder) {
+      let items;
+      try { items = await bunnyRequest('GET', `${ROOT}/${folder}/`); }
+      catch (e) { if (e.status === 404) return []; throw e; }
+      if (!Array.isArray(items)) return [];
+      return items.filter(i => !i.IsDirectory).map(i => ({
+        id: i.ObjectName.replace(/\.[^.]+$/, ''),
+        name: i.ObjectName,
+        size: i.Length || 0,
+        path: `${ROOT}/${folder}/${encodeURIComponent(i.ObjectName)}`
+      }));
+    }
 
-        if (!confirm('⚠️ WARNING: This will permanently DELETE and OVERWRITE your Saved Messages AND Saved Images with the data from this CSV. Are you absolutely sure?')) return;
+    function blobToArrayBuffer(blob) {
+      if (blob && typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+      return new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(r.result);
+        r.onerror = () => reject(new Error('No se pudo leer el archivo local.'));
+        r.readAsArrayBuffer(blob);
+      });
+    }
 
-        const btn = overlay.querySelector('#wa-sync-import-csv-btn');
-        btn.innerText = '⏳ Importing...'; btn.disabled = true;
+    const EXT = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+                  'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/3gpp': '3gp', 'video/webm': 'webm' };
+    const MIME = Object.fromEntries(Object.entries(EXT).map(([m, e]) => [e, m]));
+    MIME.jpg = 'image/jpeg';
+    const extFor = (type, fallback) => EXT[(type || '').toLowerCase()] || fallback;
 
+    // ================= Datos locales =================
+    function readList(key, getter) {
+      if (getter) { try { const d = getter(); if (d && Array.isArray(d.items)) return d; } catch (e) { /* ignore */ } }
+      try { const d = JSON.parse(localStorage.getItem(key)); if (d && Array.isArray(d.items)) return d; } catch (e) { /* ignore */ }
+      return { items: [] };
+    }
+    const imageIds = () => readList(IMG_LIST_KEY, core.getImageLibrary).items.filter(i => i.type === 'image').map(i => i.id);
+    const videoIds = () => readList(VID_LIST_KEY, core.getVideoLibrary).items.filter(i => i.type === 'video').map(i => i.id);
+
+    // Imágenes: base del kit (core.getDb), almacén "images" → { id, blob, order }
+    const imageStore = {
+      label: 'Img',
+      ids: imageIds,
+      async getAll() {
+        const db = core.getDb && core.getDb();
+        if (!db || !db.objectStoreNames.contains('images')) return new Map();
+        return new Promise(resolve => {
+          const map = new Map();
+          const req = db.transaction(['images'], 'readonly').objectStore('images').openCursor();
+          req.onsuccess = () => {
+            const cur = req.result;
+            if (!cur) return resolve(map);
+            if (cur.value && cur.value.blob) map.set(cur.value.id, cur.value.blob);
+            cur.continue();
+          };
+          req.onerror = () => resolve(map);
+        });
+      },
+      async put(id, blob) {
+        const db = core.getDb && core.getDb();
+        if (!db) throw new Error('La base de imágenes no está lista. Recarga WhatsApp.');
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(['images'], 'readwrite');
+          tx.objectStore('images').put({ id, blob, order: Date.now() });
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('No se pudo guardar la imagen.'));
+        });
+      }
+    };
+
+    // Videos: base propia del bloque de videos
+    let vdb = null;
+    function openVideoDb() {
+      if (vdb) return Promise.resolve(vdb);
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(VIDEO_DB_NAME, 1);
+        req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(VIDEO_STORE)) req.result.createObjectStore(VIDEO_STORE, { keyPath: 'id' }); };
+        req.onsuccess = () => { vdb = req.result; resolve(vdb); };
+        req.onerror = () => reject(req.error || new Error('No se pudo abrir la base de videos.'));
+      });
+    }
+    const videoStore = {
+      label: 'Video',
+      ids: videoIds,
+      async getAll() {
+        const db = await openVideoDb();
+        // Solo las claves (no carga los videos a memoria todavía)
+        const keys = await new Promise(resolve => {
+          const req = db.transaction([VIDEO_STORE], 'readonly').objectStore(VIDEO_STORE).getAllKeys();
+          req.onsuccess = () => resolve(req.result || []);
+          req.onerror = () => resolve([]);
+        });
+        const map = new Map();
+        keys.forEach(k => map.set(k, null)); // null = cargar cuando haga falta
+        return map;
+      },
+      async getBlob(id) {
+        const db = await openVideoDb();
+        return new Promise(resolve => {
+          const req = db.transaction([VIDEO_STORE], 'readonly').objectStore(VIDEO_STORE).get(id);
+          req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+          req.onerror = () => resolve(null);
+        });
+      },
+      async put(id, blob) {
+        const db = await openVideoDb();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction([VIDEO_STORE], 'readwrite');
+          tx.objectStore(VIDEO_STORE).put({ id, blob });
+          tx.oncomplete = resolve;
+          tx.onerror = () => reject(tx.error || new Error('No se pudo guardar el video.'));
+          tx.onabort = () => reject(tx.error || new Error('No hay espacio para guardar el video.'));
+        });
+      }
+    };
+
+    // ================= UI =================
+    const style = document.createElement('style');
+    style.id = 'wa-csc-styles';
+    style.textContent = `
+      .wa-csc-wrap { display:flex; flex-direction:column; gap:10px; font-size:11px; color:#fff; font-family:-apple-system,sans-serif; }
+      .wa-csc-box { background:#18181b; padding:10px; border-radius:6px; border:1px solid #334155; display:flex; flex-direction:column; gap:6px; }
+      .wa-csc-title { color:#94a3b8; font-size:10px; font-weight:bold; text-transform:uppercase; letter-spacing:0.03em; margin-bottom:2px; }
+      .wa-csc-input { background:#0f172a; color:#fff; border:1px solid #334155; border-radius:4px; padding:6px; font-size:11px; outline:none; width:100%; box-sizing:border-box; }
+      .wa-csc-input:focus { border-color:#6366f1; }
+      .wa-csc-row { display:flex; gap:6px; }
+      .wa-csc-btn { flex:1; border:none; border-radius:4px; padding:6px; font-size:10px; font-weight:bold; cursor:pointer; text-align:center; transition:0.15s; }
+      .wa-csc-btn:disabled { opacity:0.5; cursor:not-allowed; }
+      .wa-csc-btn-green { background:#10b981; color:#fff; } .wa-csc-btn-green:hover:not(:disabled){ background:#059669; }
+      .wa-csc-btn-blue { background:#0284c7; color:#fff; }  .wa-csc-btn-blue:hover:not(:disabled){ background:#0369a1; }
+      .wa-csc-btn-red { background:#dc2626; color:#fff; }   .wa-csc-btn-red:hover:not(:disabled){ background:#b91c1c; }
+      .wa-csc-status { font-size:10px; text-align:center; margin-top:2px; color:#c9a876; min-height:14px; font-weight:bold; line-height:1.4; }
+      .wa-csc-cred-line { display:flex; align-items:center; gap:6px; color:#94a3b8; font-size:11px; }
+      .wa-csc-cred-line span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .wa-csc-gear { background:none; border:none; cursor:pointer; font-size:13px; padding:0 2px; opacity:.8; }
+      .wa-csc-gear:hover { opacity:1; }
+    `;
+    if (!document.getElementById('wa-csc-styles')) document.head.appendChild(style);
+
+    const REGIONS = [
+      ['default', 'Falkenstein (Default)'], ['ny', 'New York (ny)'], ['la', 'Los Angeles (la)'],
+      ['br', 'São Paulo (br)'], ['uk', 'United Kingdom (uk)'], ['se', 'Stockholm (se)'],
+      ['sg', 'Singapore (sg)'], ['syd', 'Sydney (syd)'], ['jh', 'Johannesburg (jh)']
+    ];
+
+    const wrap = document.createElement('div');
+    wrap.className = 'wa-csc-wrap';
+    wrap.innerHTML = `
+      <div class="wa-csc-box" id="wa-csc-cred-box">
+        <div class="wa-csc-cred-line" id="wa-csc-cred-line"><span id="wa-csc-cred-summary"></span><button class="wa-csc-gear" id="wa-csc-cred-edit" title="Editar credenciales">⚙️</button></div>
+        <div id="wa-csc-cred-form" style="display:flex; flex-direction:column; gap:6px;">
+          <div class="wa-csc-title">Credentials</div>
+          <input type="text" id="wa-csc-zone" class="wa-csc-input" placeholder="Storage Zone Name">
+          <input type="password" id="wa-csc-key" class="wa-csc-input" placeholder="Zone Password">
+          <select id="wa-csc-region" class="wa-csc-input">${REGIONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+          <button class="wa-csc-btn wa-csc-btn-blue" id="wa-csc-cred-save">Guardar</button>
+        </div>
+      </div>
+
+      <div class="wa-csc-box">
+        <div class="wa-csc-title" title="Secuencias, mensajes, listas de imágenes y videos, etiquetas y layout">📝 Text & Settings Master</div>
+        <div class="wa-csc-row">
+          <button class="wa-csc-btn wa-csc-btn-green" id="wa-csc-push-master" title="Subir tus listas y ajustes a la nube">☁️ Push</button>
+          <button class="wa-csc-btn wa-csc-btn-blue" id="wa-csc-pull-master" title="Bajar listas y ajustes de la nube (reemplaza los locales)">📥 Pull</button>
+        </div>
+      </div>
+
+      <div class="wa-csc-box">
+        <div class="wa-csc-title">🖼️ Images</div>
+        <div class="wa-csc-row">
+          <button class="wa-csc-btn wa-csc-btn-green" data-kind="img" data-op="push" title="Sube las nuevas y borra de la nube las que ya no tienes">☁️ Smart Backup</button>
+          <button class="wa-csc-btn wa-csc-btn-blue" data-kind="img" data-op="pull" title="Baja las que te faltan">📥 Pull</button>
+          <button class="wa-csc-btn wa-csc-btn-red" data-kind="img" data-op="force" title="Borra la nube y vuelve a subir todo">♻️ Force</button>
+        </div>
+      </div>
+
+      <div class="wa-csc-box">
+        <div class="wa-csc-title">🎬 Videos</div>
+        <div class="wa-csc-row">
+          <button class="wa-csc-btn wa-csc-btn-green" data-kind="vid" data-op="push" title="Sube los nuevos y borra de la nube los que ya no tienes">☁️ Smart Backup</button>
+          <button class="wa-csc-btn wa-csc-btn-blue" data-kind="vid" data-op="pull" title="Baja los que te faltan">📥 Pull</button>
+          <button class="wa-csc-btn wa-csc-btn-red" data-kind="vid" data-op="force" title="Borra la nube y vuelve a subir todo">♻️ Force</button>
+        </div>
+      </div>
+
+      <div id="wa-csc-status" class="wa-csc-status">Ready.</div>
+    `;
+    const $ = s => wrap.querySelector(s);
+
+    // ---- Credenciales: se pliegan a una línea cuando están guardadas ----
+    function renderCreds(forceOpen) {
+      $('#wa-csc-zone').value = prefs.zoneName;
+      $('#wa-csc-key').value = prefs.apiKey;
+      $('#wa-csc-region').value = prefs.region;
+      const has = prefs.zoneName && prefs.apiKey;
+      const open = forceOpen || !has;
+      $('#wa-csc-cred-form').style.display = open ? 'flex' : 'none';
+      $('#wa-csc-cred-line').style.display = has ? 'flex' : 'none';
+      const reg = (REGIONS.find(r => r[0] === prefs.region) || REGIONS[0])[1].replace(/\s*\(.*\)/, '');
+      $('#wa-csc-cred-summary').textContent = `🔑 ${prefs.zoneName} · ${reg}`;
+    }
+    $('#wa-csc-cred-edit').onclick = () => {
+      const formOpen = $('#wa-csc-cred-form').style.display !== 'none';
+      renderCreds(!formOpen);
+    };
+    $('#wa-csc-cred-save').onclick = () => {
+      prefs.zoneName = $('#wa-csc-zone').value.trim();
+      prefs.apiKey = $('#wa-csc-key').value.trim();
+      prefs.region = $('#wa-csc-region').value;
+      savePrefs();
+      renderCreds(false);
+      setStatus(prefs.zoneName && prefs.apiKey ? '✅ Credenciales guardadas.' : '❌ Faltan datos.', !(prefs.zoneName && prefs.apiKey));
+    };
+
+    // ---- Estado / bloqueo ----
+    const statusEl = $('#wa-csc-status');
+    const allBtns = () => [...wrap.querySelectorAll('.wa-csc-btn')];
+    function setStatus(msg, isError) { statusEl.style.color = isError ? '#f43f5e' : '#10b981'; statusEl.textContent = msg; }
+    function lockUI(msg) { allBtns().forEach(b => { b.disabled = true; }); statusEl.style.color = '#c9a876'; statusEl.textContent = msg; }
+    function unlockUI(msg, isError) { allBtns().forEach(b => { b.disabled = false; }); setStatus(msg, isError); }
+    const ready = () => prefs.zoneName && prefs.apiKey;
+
+    // ================= MASTER =================
+    function masterKeys() {
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('wa_') && !EXCLUDED_KEYS.has(k)) keys.push(k);
+      }
+      return keys.sort();
+    }
+
+    $('#wa-csc-push-master').onclick = async () => {
+      if (!ready()) return unlockUI('❌ Faltan credenciales.', true);
+      lockUI('☁️ Push Master…');
+      try {
+        const keys = masterKeys();
+        const payload = { __meta: { app: 'wa_toolkit', version: 1, pushedAt: new Date().toISOString() }, keys: {} };
+        keys.forEach(k => { payload.keys[k] = localStorage.getItem(k); });
+        const buf = await blobToArrayBuffer(new Blob([JSON.stringify(payload)], { type: 'application/json' }));
+        await bunnyRequest('PUT', `${ROOT}/master_config.json`, buf);
+        console.log('[waSync] master push:', keys);
+        unlockUI(`✅ Master subido (${keys.length} ajustes · ${fmtMB(buf.byteLength)}).`);
+      } catch (e) { unlockUI('❌ ' + e.message, true); }
+    };
+
+    $('#wa-csc-pull-master').onclick = async () => {
+      if (!ready()) return unlockUI('❌ Faltan credenciales.', true);
+      lockUI('📥 Pull Master…');
+      let data;
+      try { data = await bunnyRequest('GET', `${ROOT}/master_config.json`); }
+      catch (e) { return unlockUI(e.status === 404 ? '❌ No hay Master en la nube todavía. Haz Push primero.' : '❌ ' + e.message, true); }
+      if (!data || typeof data !== 'object') return unlockUI('❌ Archivo de la nube inválido.', true);
+      // Acepta el formato {keys:{...}} y también el plano {clave: valor}
+      const entries = Object.entries(data.keys && typeof data.keys === 'object' ? data.keys : data)
+        .filter(([k, v]) => k.startsWith('wa_') && !EXCLUDED_KEYS.has(k) && typeof v === 'string');
+      const when = data.__meta && data.__meta.pushedAt ? new Date(data.__meta.pushedAt).toLocaleString() : 'fecha desconocida';
+      if (!confirm(`⚠️ Reemplazar tus listas y ajustes locales con la nube?\n\n${entries.length} ajustes · subidos: ${when}\n\nLa página se recargará.`)) return unlockUI('Cancelado.');
+      entries.forEach(([k, v]) => localStorage.setItem(k, v));
+      console.log('[waSync] master pull:', entries.map(e => e[0]));
+      unlockUI('✅ Master importado. Recargando…');
+      setTimeout(() => location.reload(), 1000);
+    };
+
+    // ================= IMAGES / VIDEOS =================
+    const KINDS = {
+      img: { folder: 'images', store: imageStore, icon: '🖼️', fallbackExt: 'jpg' },
+      vid: { folder: 'videos', store: videoStore, icon: '🎬', fallbackExt: 'mp4' }
+    };
+
+    async function getLocalBlob(kind, id, localMap) {
+      const b = localMap.get(id);
+      if (b) return b;
+      return kind.store.getBlob ? kind.store.getBlob(id) : null;
+    }
+
+    async function uploadOne(kind, id, blob, n, total) {
+      const ext = extFor(blob.type, kind.fallbackExt);
+      const buf = await blobToArrayBuffer(blob);
+      const label = `${kind.icon} Push ${n}/${total}`;
+      lockUI(`${label}…`);
+      await bunnyRequest('PUT', `${ROOT}/${kind.folder}/${encodeURIComponent(id)}.${ext}`, buf, '',
+        buf.byteLength > 2 * 1048576 ? p => lockUI(`${label} · ${Math.round(p * 100)}%`) : null);
+    }
+
+    async function smartBackup(k) {
+      const kind = KINDS[k];
+      lockUI(`${kind.icon} Revisando…`);
+      const listed = new Set(kind.store.ids());
+      const local = await kind.store.getAll();
+      const cloud = await listCloud(kind.folder);
+      const cloudIds = new Set(cloud.map(c => c.id));
+
+      const toUpload = [...listed].filter(id => local.has(id) && !cloudIds.has(id));
+      const toDelete = cloud.filter(c => !listed.has(c.id));
+      const missingLocal = [...listed].filter(id => !local.has(id)).length;
+
+      if (!toUpload.length && !toDelete.length) {
+        return unlockUI(`✅ ${kind.icon} Al día.` + (missingLocal ? ` (${missingLocal} sin archivo en este PC: usa Pull)` : ''));
+      }
+      if (toDelete.length && !confirm(`${kind.icon} Smart Backup\n\nSubir: ${toUpload.length}\nBorrar de la nube: ${toDelete.length} (ya no están en tu lista)\n\n¿Continuar?`)) {
+        return unlockUI('Cancelado.');
+      }
+      for (let i = 0; i < toDelete.length; i++) {
+        lockUI(`🗑️ Borrando ${i + 1}/${toDelete.length}…`);
+        await bunnyRequest('DELETE', toDelete[i].path);
+      }
+      for (let i = 0; i < toUpload.length; i++) {
+        const blob = await getLocalBlob(kind, toUpload[i], local);
+        if (blob) await uploadOne(kind, toUpload[i], blob, i + 1, toUpload.length);
+        await sleep(80);
+      }
+      unlockUI(`✅ ${kind.icon} Backup: subidos ${toUpload.length}, borrados ${toDelete.length}.`);
+    }
+
+    async function pull(k) {
+      const kind = KINDS[k];
+      lockUI(`${kind.icon} Revisando…`);
+      const listed = kind.store.ids();
+      const local = await kind.store.getAll();
+      const cloud = await listCloud(kind.folder);
+      const byId = new Map(cloud.map(c => [c.id, c]));
+
+      if (!listed.length && cloud.length) {
+        return unlockUI(`⚠️ Tu lista está vacía pero la nube tiene ${cloud.length}. Primero haz 📥 Pull del Master.`, true);
+      }
+      const toDownload = listed.filter(id => !local.has(id) && byId.has(id));
+      const notInCloud = listed.filter(id => !local.has(id) && !byId.has(id)).length;
+      if (!toDownload.length) return unlockUI(`✅ ${kind.icon} Ya tienes todo.` + (notInCloud ? ` (${notInCloud} no están en la nube)` : ''));
+
+      for (let i = 0; i < toDownload.length; i++) {
+        const c = byId.get(toDownload[i]);
+        const label = `${kind.icon} Pull ${i + 1}/${toDownload.length}`;
+        lockUI(`${label}…`);
+        const raw = await bunnyRequest('GET', c.path, null, 'blob', c.size > 2 * 1048576 ? p => lockUI(`${label} · ${Math.round(p * 100)}%`) : null);
+        const ext = (c.name.match(/\.([^.]+)$/) || [])[1] || kind.fallbackExt;
+        const blob = raw && raw.type ? raw : new Blob([raw], { type: MIME[ext.toLowerCase()] || '' });
+        await kind.store.put(c.id, blob);
+        await sleep(60);
+      }
+      unlockUI(`✅ ${kind.icon} Pull: ${toDownload.length} descargados.` + (notInCloud ? ` (${notInCloud} no están en la nube)` : ''));
+      if (k === 'img' && core.getImageLibrary) core.emit('imglib:changed', core.getImageLibrary());
+      if (k === 'vid' && core.getVideoLibrary) core.emit('vidlib:changed', core.getVideoLibrary());
+    }
+
+    async function force(k) {
+      const kind = KINDS[k];
+      if (!confirm(`⚠️ ${kind.icon} Force\n\nBorra TODO lo de la nube en "${kind.folder}" y vuelve a subir lo de este PC.\n¿Continuar?`)) return unlockUI('Cancelado.');
+      lockUI(`♻️ Revisando…`);
+      const listed = kind.store.ids();
+      const local = await kind.store.getAll();
+      const cloud = await listCloud(kind.folder);
+      for (let i = 0; i < cloud.length; i++) {
+        lockUI(`♻️ Borrando ${i + 1}/${cloud.length}…`);
+        await bunnyRequest('DELETE', cloud[i].path);
+      }
+      const ids = listed.filter(id => local.has(id));
+      for (let i = 0; i < ids.length; i++) {
+        const blob = await getLocalBlob(kind, ids[i], local);
+        if (blob) await uploadOne(kind, ids[i], blob, i + 1, ids.length);
+        await sleep(80);
+      }
+      unlockUI(`✅ ${kind.icon} Force: subidos ${ids.length}.`);
+    }
+
+    wrap.querySelectorAll('[data-kind]').forEach(btn => {
+      btn.onclick = async () => {
+        if (!ready()) return unlockUI('❌ Faltan credenciales.', true);
+        const { kind, op } = btn.dataset;
         try {
-          importCsvTextAndOverwrite(csvText);
-          alert('✅ Import successful! Reloading page to apply changes.');
-          window.location.reload();
-        } catch (err) {
-          console.error(err);
-          alert('Import failed: ' + err.message);
-          btn.innerText = '📥 Overwrite & Import CSV'; btn.disabled = false;
+          if (op === 'push') await smartBackup(kind);
+          else if (op === 'pull') await pull(kind);
+          else await force(kind);
+        } catch (e) {
+          console.error('[waSync]', e);
+          unlockUI('❌ ' + e.message, true);
         }
       };
+    });
 
-      overlay.querySelector('#wa-sync-close-btn').onclick = () => overlay.remove();
-    }
-
-    function attachSyncButton(headerBtnsSelector) {
-      const headerBtns = document.querySelector(headerBtnsSelector);
-      if (headerBtns && !headerBtns.querySelector('.wa-sync-btn')) {
-        const syncBtn = document.createElement('button');
-        syncBtn.className = 'wa-tln-hbtn wa-sync-btn';
-        syncBtn.innerText = '☁️ Sync';
-        syncBtn.onclick = openSyncModal;
-        headerBtns.appendChild(syncBtn);
+    // ================= Montaje =================
+    function mountCard(attemptsLeft) {
+      attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
+      if (typeof core.registerMenu === 'function') {
+        core.registerMenu('left', '☁️ Sync Center', wrap, '⠿', 'wa-cloud-sync-center');
+        renderCreds(false);
+      } else if (attemptsLeft > 0) {
+        setTimeout(() => mountCard(attemptsLeft - 1), 200);
       }
     }
-
-    function initWatcher(attempts) {
-      attachSyncButton('[data-key="text-library-module"] .wa-tln-header-btns');
-      attachSyncButton('[data-key="image-library-module"] .wa-tln-header-btns');
-      if (attempts > 0) setTimeout(() => initWatcher(attempts - 1), 300);
-    }
-    initWatcher(20);
-    core.on('tl:tree-rendered', () => attachSyncButton('[data-key="text-library-module"] .wa-tln-header-btns'));
-    core.on('il:tree-rendered', () => attachSyncButton('[data-key="image-library-module"] .wa-tln-header-btns'));
-
-    core.emit('block:ready', { id: 'sheetsSyncModule' });
+    mountCard();
+    core.emit('block:ready', { id: 'waCloudSyncCenterModule' });
   }
 });
 
@@ -2930,76 +3695,785 @@ LegoCore.registerBlock({
 });
 
 /* ============================================================
-   BLOCK: Contact Tag Editor (v4)
+   BLOCK: Contact Badge Renderer (v9)
    ============================================================ */
 /* ============================================================
-   BLOCK 1: Contact Tag Editor (v3.2)
+   BLOCK: Etiquetas Simples (v1.5)
    ------------------------------------------------------------
-   Standalone plugin -- no dependency on any other block.
-   Mounts its own card into the Dual Sidebar via core.registerMenu.
+   v1.5: botón "A" junto al color de cada etiqueta (y de Números /
+   Otras) para elegir texto negro o blanco en la burbuja.
+   v1.4: interfaz mínima -- la vista principal es solo la lista.
+   ⚙️ abre los ajustes (burbujas, apariencia y Excel).
+   v1.3: CARPETAS -- la lista de etiquetas se organiza en carpetas
+   (mismo formato visual que "Saved Messages"): 📁 Carpeta crea una,
+   arrastra ⠿ para mover etiquetas dentro/fuera, ⚙️ renombra o borra
+   (BORRAR solo elimina la carpeta, las etiquetas suben un nivel),
+   👁 en la carpeta oculta/muestra todas sus etiquetas a la vez.
+   Las carpetas viajan en Exportar/Importar etiquetas (columna Carpeta).
 
-   Novedades v3.2:
-   - Soporte para importar archivos locales .xlsx y .csv.
-   - Detección automática del formato de archivo subido.
+   REEMPLAZA los bloques anteriores:
+     - BLOCK 1: Contact Tag Editor
+     - BLOCK 2: Contact Badge Renderer
+     - BLOCK 3: Contact Tag Dashboard
+   Bórralos del script antes de pegar este (si no, se pisan).
+
+   CÓMO FUNCIONA
+   - Todo lo que esté entre paréntesis en el nombre de un contacto
+     se muestra como burbuja:
+       "Pablo Perez (ACN) (50000) (Pagado)"
+        -> Pablo Perez [ACN] [50000] [Pagado]
+   - Las etiquetas de tu lista usan su color. Los números usan el
+     color de "Números". Cualquier otra cosa usa el color de "Otras".
+   - 👁 / 🙈 oculta una etiqueta: no se ve como burbuja, pero aparece
+     al pasar el cursor sobre el contacto. Un "+N" pequeño avisa
+     cuántas hay ocultas.
+   - El formato antiguo con corchetes [C:ACN] ya NO se muestra como
+     burbuja (queda como texto normal, así es fácil encontrarlos y
+     cambiarlos).
+
+   EXCEL
+   - Exportar / Importar lista de etiquetas (para compartir con el
+     equipo: mismo nombre, color y oculto/visible).
+   - Exportar contactos: recorre todos los chats y genera un Excel
+     con los contactos que tienen etiquetas.
+   - Necesita esta línea en el encabezado de Tampermonkey:
+       // @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
+     Sin ella, todo funciona igual pero en formato CSV.
    ============================================================ */
 LegoCore.registerBlock({
-  id: 'contactTagEditorPlugin',
+  id: 'simpleTagsPlugin',
   init(core) {
-    const FIELDS_KEY = 'wa_tag_fields_v1';
-    const VIEW_KEY = 'wa_tag_editor_view_v1';
-    const PALETTE = ['#8ecae6', '#7ee787', '#f6c344', '#ff9770', '#c792ea', '#c9a876', '#ff8fa3', '#94e2c4'];
+    // ---------------- SELECTORS -- ADJUST IF NEEDED ----------------
+    // Igual que el antiguo Block 2: se buscan todos los span[title] dentro
+    // de la lista de chats (no depende del rol de la fila, que WhatsApp cambia).
+    const LIST_ROOT_SELECTOR = '#pane-side';
+    const SCROLL_CONTAINER_SELECTOR = '#pane-side [role="grid"], #pane-side';
+    const ROWISH_SELECTOR = '[role="listitem"], [role="row"], [role="gridcell"], [role="option"]';
+    const DEBUG = true; // muestra en la consola cuántos nombres encontró
+    // -----------------------------------------------------------------
 
-    const DEFAULT_FIELDS = [
-      { key: 'C', label: 'Curso', inputType: 'select', options: ['ACN', 'RETV', 'FDOSC'], valueColors: { 'ACN': '#8ecae6', 'RETV': '#ff9770', 'FDOSC': '#c792ea' } },
-      { key: 'G', label: 'Generación', inputType: 'text', color: '#c792ea' },
-      { key: 'V', label: 'Vence', inputType: 'date', color: '#ff9770' },
-      { key: 'H', label: 'Hijo/Alumno', inputType: 'text', color: '#7ee787' },
-      { key: 'E', label: 'Edad', inputType: 'number', color: '#f6c344' },
-      { key: 'P', label: 'Precio', inputType: 'number', color: '#c9a876', thousands: true },
-      { key: 'S', label: 'Pago', inputType: 'select', options: ['Pagado', 'Pendiente'], valueColors: { 'Pagado': '#7ee787', 'Pendiente': '#ff8fa3' } },
-      { key: 'A', label: 'Activo', inputType: 'select', options: ['Activo', 'Inactivo'], valueColors: { 'Activo': '#7ee787', 'Inactivo': '#96949c' } },
-      { key: 'F', label: 'Formulario', inputType: 'select', options: ['Sí', 'No'], valueColors: { 'Sí': '#7ee787', 'No': '#96949c' } }
-    ];
-
-    let fields = [];
-    try { fields = JSON.parse(localStorage.getItem(FIELDS_KEY)); } catch (e) { fields = null; }
-    if (!Array.isArray(fields) || !fields.length) fields = JSON.parse(JSON.stringify(DEFAULT_FIELDS));
-
-    function saveFields() { localStorage.setItem(FIELDS_KEY, JSON.stringify(fields)); }
-
-    function nextPaletteColor(usedColors) {
-      const free = PALETTE.find(c => !usedColors.includes(c));
-      return free || PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    // Devuelve solo los span[title] que son NOMBRES de contacto (no la vista
+    // previa del último mensaje). Sube desde cada span hasta el primer
+    // contenedor que tenga más de un span[title]; el nombre es siempre el primero.
+    function isNameSpan(span, root) {
+      let el = span.parentElement;
+      while (el && el !== root) {
+        const titled = el.querySelectorAll('span[title]');
+        if (titled.length > 1) return titled[0] === span;
+        el = el.parentElement;
+      }
+      return true;
+    }
+    function getNameSpans() {
+      const root = document.querySelector(LIST_ROOT_SELECTOR);
+      if (!root) return [];
+      return Array.from(root.querySelectorAll('span[title]')).filter(s => isNameSpan(s, root));
     }
 
-    // ---------------- Parsing / building (contact-name format) ----------------
-    function parseFullName(raw) {
-      const tagRe = /\[(\w+):([^\]]*)\]/g;
-      const found = [];
-      let m;
-      while ((m = tagRe.exec(raw)) !== null) found.push({ key: m[1], value: m[2].trim() });
-      const firstBracket = raw.indexOf('[');
-      const baseName = (firstBracket === -1 ? raw : raw.slice(0, firstBracket)).trim();
-      return { baseName, found };
-    }
+    const STORE_KEY = 'wa_simple_tags_v1';
+    const PALETTE = ['#8ecae6', '#7ee787', '#f6c344', '#ff9770', '#c792ea', '#ff8fa3', '#94e2c4', '#c9a876', '#a0c4ff', '#ffd6a5'];
+    const NUMBERS_LABEL = '(números)';
+    const OTHERS_LABEL = '(otras)';
 
-    function buildFullName(baseName, values, otherTags) {
-      const parts = [];
-      if (baseName && baseName.trim()) parts.push(baseName.trim());
-      fields.forEach(f => {
-        const v = values[f.key];
-        if (v !== undefined && v !== null && String(v).trim() !== '') {
-          parts.push(`[${f.key}:${String(v).trim()}]`);
+    // ---------------- Config ----------------
+    function defaultConfig() {
+      return {
+        enabled: true,
+        tags: [],    // [{ id, name, color, hidden, parentId, order }]
+        folders: [], // [{ id, name, collapsed, parentId, order }]
+        numbers: { color: '#c9a876', hidden: false },
+        others: { color: '#6b6873', hidden: false },
+        look: { font: 10, pad: 7, radius: 9 } // tamaño de texto, relleno, radio de esquina (px)
+      };
+    }
+    let idSeq = 0;
+    const newId = prefix => prefix + Date.now() + '_' + (idSeq++);
+
+    function loadConfig() {
+      try {
+        const c = JSON.parse(localStorage.getItem(STORE_KEY));
+        if (c && Array.isArray(c.tags)) {
+          const merged = Object.assign(defaultConfig(), c);
+          merged.look = Object.assign(defaultConfig().look, c.look || {});
+          if (!Array.isArray(merged.folders)) merged.folders = [];
+          // Migración v1.x -> carpetas: las etiquetas antiguas van a la raíz
+          merged.tags.forEach((t, i) => {
+            if (!t.id) t.id = newId('tag_');
+            if (!t.parentId) t.parentId = 'root';
+            if (typeof t.order !== 'number') t.order = i;
+          });
+          return merged;
         }
-      });
-      (otherTags || []).forEach(t => parts.push(`[${t.key}:${t.value}]`));
-      return parts.join(' ');
+      } catch (e) { /* ignore */ }
+      return defaultConfig();
+    }
+    let config = loadConfig();
+    let configVersion = 0;
+    // redraw=false: guarda sin redibujar las burbujas (ej: abrir/cerrar carpeta)
+    function save(redraw) {
+      localStorage.setItem(STORE_KEY, JSON.stringify(config));
+      if (redraw !== false) configVersion++;
     }
 
-    // ---------------- Generic CSV parser (for Sheets import) ----------------
+    const norm = s => String(s || '').trim().toLowerCase();
+    const findTag = name => config.tags.find(t => norm(t.name) === norm(name));
+    const isNumber = s => /^[$\s]*\d[\d.,\s]*$/.test(s);
+
+    function nextPaletteColor() {
+      const used = config.tags.map(t => t.color);
+      return PALETTE.find(c => !used.includes(c)) || PALETTE[config.tags.length % PALETTE.length];
+    }
+
+    function styleFor(text) {
+      const tag = findTag(text);
+      if (tag) return tag;
+      if (isNumber(text)) return config.numbers;
+      return config.others;
+    }
+
+    // ---------------- Color del texto (negro / blanco) ----------------
+    // entry.text: 'black' | 'white' | (vacío = automático según el fondo)
+    const BLACK = '#000000', WHITE = '#ffffff';
+    function textFor(entry) {
+      if (entry.text === 'black') return BLACK;
+      if (entry.text === 'white') return WHITE;
+      return contrastColor(entry.color);
+    }
+    // Botón "A" con el fondo de la etiqueta y su color de texto; clic = alterna negro/blanco
+    function makeTextToggle(entry, onChange) {
+      const btn = document.createElement('button');
+      btn.className = 'wa-tg-txt';
+      btn.textContent = 'A';
+      btn.repaint = () => {
+        const isBlack = textFor(entry) === BLACK;
+        btn.style.background = entry.color;
+        btn.style.color = isBlack ? BLACK : WHITE;
+        btn.title = isBlack ? 'Texto negro · clic para blanco' : 'Texto blanco · clic para negro';
+      };
+      btn.repaint();
+      btn.onclick = e => {
+        e.stopPropagation();
+        entry.text = textFor(entry) === BLACK ? 'white' : 'black';
+        btn.repaint();
+        onChange();
+      };
+      return btn;
+    }
+
+    function contrastColor(hex) {
+      if (!hex || hex[0] !== '#' || hex.length < 7) return '#000000';
+      const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+      return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#000000' : '#ffffff';
+    }
+
+    // ---------------- Parsing ----------------
+    function parseName(raw) {
+      const tags = [];
+      const re = /\(([^()]*)\)/g;
+      let m;
+      while ((m = re.exec(raw)) !== null) {
+        const t = m[1].trim();
+        if (t) tags.push(t);
+      }
+      const base = raw.replace(/\([^()]*\)/g, ' ').replace(/\s+/g, ' ').trim();
+      return { base, tags };
+    }
+
+    // ---------------- Styles ----------------
+    function injectStyles() {
+      if (document.getElementById('wa-tg-styles')) return;
+      const style = document.createElement('style');
+      style.id = 'wa-tg-styles';
+      style.innerHTML = `
+        .wa-tg-bubble { display:inline-flex; align-items:center; font-size:10px; font-weight:700; line-height:1.5; padding:0 7px; border-radius:9px; white-space:nowrap; }
+        .wa-tg-bubble-hidden { display:none; opacity:.75; }
+        .wa-tg-more { font-size:9.5px; color:#96949c; white-space:nowrap; }
+        [data-wa-tg-row]:hover .wa-tg-bubble-hidden, span[data-wa-tg-key]:hover .wa-tg-bubble-hidden { display:inline-flex; }
+        [data-wa-tg-row]:hover .wa-tg-more, span[data-wa-tg-key]:hover .wa-tg-more { display:none; }
+
+        .wa-tg-wrap { display:flex; flex-direction:column; gap:8px; font-family:-apple-system,sans-serif; font-size:11px; color:var(--igls-text,#ece9e4); }
+        .wa-tg-input { flex:1; background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:7px 8px; font-size:11px; outline:none; min-width:0; }
+        .wa-tg-input:focus { border-color:var(--igls-accent,#c9a876); }
+        .wa-tg-btn { background:rgba(255,255,255,.06); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; }
+        .wa-tg-btn:hover { filter:brightness(1.15); }
+        .wa-tg-btn-accent { background:var(--igls-accent,#c9a876); color:#171208; border:none; font-weight:700; }
+        .wa-tg-row { display:flex; gap:6px; align-items:center; }
+        .wa-tg-hint { font-size:10px; color:var(--igls-text-dim,#96949c); line-height:1.4; }
+        .wa-tg-list { display:flex; flex-direction:column; gap:4px; }
+        .wa-tg-item { display:flex; align-items:center; gap:6px; padding:3px 4px; border-radius:6px; }
+        .wa-tg-item:hover { background:rgba(255,255,255,.04); }
+        .wa-tg-color { width:20px; height:20px; border:none; border-radius:50%; padding:0; cursor:pointer; background:transparent; flex-shrink:0; }
+        .wa-tg-color::-webkit-color-swatch-wrapper { padding:0; }
+        .wa-tg-color::-webkit-color-swatch { border:none; border-radius:50%; }
+        .wa-tg-txt { width:20px; height:20px; flex-shrink:0; padding:0; border:1px solid rgba(255,255,255,.18); border-radius:5px; font-size:11px; font-weight:800; line-height:1; cursor:pointer; font-family:-apple-system,sans-serif; }
+        .wa-tg-txt:hover { outline:1px solid var(--igls-accent,#c9a876); }
+        .wa-tg-chip { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+        .wa-tg-chip-dim { color:var(--igls-text-dim,#96949c); font-style:italic; cursor:default; }
+        .wa-tg-icon { background:transparent; border:none; cursor:pointer; font-size:12px; padding:2px 4px; border-radius:4px; opacity:.75; }
+        .wa-tg-icon:hover { opacity:1; background:rgba(255,255,255,.08); }
+        .wa-tg-empty { font-size:10px; color:var(--igls-text-dim,#96949c); padding:8px; border:1px dashed var(--igls-border,rgba(255,255,255,.15)); border-radius:6px; text-align:center; }
+        .wa-tg-divider { border-top:1px solid var(--igls-border,rgba(255,255,255,.08)); padding-top:8px; display:flex; flex-direction:column; gap:6px; }
+        .wa-tg-label { font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--igls-text-dim,#96949c); }
+        .wa-tg-check { display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--igls-text-dim,#96949c); cursor:pointer; }
+        .wa-tg-gear { flex:0 0 auto !important; padding-left:9px; padding-right:9px; }
+        .wa-tg-settings { display:flex; flex-direction:column; gap:12px; }
+        .wa-tg-sec { display:flex; flex-direction:column; gap:5px; }
+        .wa-tg-sec + .wa-tg-sec { border-top:1px solid var(--igls-border,rgba(255,255,255,.08)); padding-top:10px; }
+        .wa-tg-link { background:none; border:none; padding:0; color:var(--igls-text-dim,#96949c); font-size:10px; cursor:pointer; text-align:left; text-decoration:underline; }
+        .wa-tg-link:hover { color:var(--igls-accent,#c9a876); }
+        #wa-tg-status:empty { display:none; }
+        .wa-tg-step { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:10.5px; color:var(--igls-text-dim,#96949c); }
+        .wa-tg-step-btns { display:flex; gap:4px; }
+        .wa-tg-step-btn { width:24px; height:24px; border-radius:5px; background:rgba(255,255,255,.06); border:1px solid var(--igls-border,rgba(255,255,255,.08)); color:var(--igls-text,#ece9e4); cursor:pointer; font-size:13px; font-weight:700; line-height:1; }
+        .wa-tg-step-btn:hover { color:var(--igls-accent,#c9a876); }
+        .wa-tg-preview { display:flex; align-items:center; gap:4px; flex-wrap:wrap; padding:8px; border-radius:6px; background:var(--igls-surface-2,#1c1c23); font-size:12px; }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // ---------------- Bubble rendering in the chat list ----------------
+    function renderName(span, raw) {
+      const { base, tags } = parseName(raw);
+
+      span.style.whiteSpace = 'normal';
+      span.style.overflow = 'visible';
+      span.style.textOverflow = 'unset';
+      span.style.maxWidth = 'none';
+      span.style.display = 'inline-flex';
+      span.style.flexWrap = 'wrap';
+      span.style.alignItems = 'center';
+      span.style.gap = '4px';
+
+      span.textContent = '';
+      span.appendChild(document.createTextNode(base));
+
+      let hiddenCount = 0;
+      tags.forEach(t => {
+        const st = styleFor(t);
+        const b = document.createElement('span');
+        b.className = 'wa-tg-bubble' + (st.hidden ? ' wa-tg-bubble-hidden' : '');
+        b.textContent = t;
+        b.style.backgroundColor = st.color;
+        b.style.color = textFor(st);
+        applyLook(b);
+        span.appendChild(b);
+        if (st.hidden) hiddenCount++;
+      });
+
+      if (hiddenCount) {
+        const more = document.createElement('span');
+        more.className = 'wa-tg-more';
+        more.textContent = '+' + hiddenCount;
+        span.appendChild(more);
+      }
+    }
+
+    function applyLook(el) {
+      const { font, pad, radius } = config.look;
+      el.style.fontSize = font + 'px';
+      el.style.padding = `${Math.max(1, Math.round(pad / 3))}px ${pad}px`;
+      el.style.borderRadius = radius + 'px';
+    }
+
+    function revertName(span) {
+      ['whiteSpace', 'overflow', 'textOverflow', 'maxWidth', 'display', 'flexWrap', 'alignItems', 'gap'].forEach(p => { span.style[p] = ''; });
+      span.textContent = span.getAttribute('title') || '';
+      delete span.dataset.waTgKey;
+    }
+
+    let lastDebug = '';
+    function scanAndRender() {
+      if (!config.enabled) return;
+      const spans = getNameSpans();
+      let tagged = 0;
+      spans.forEach(span => {
+        const raw = span.getAttribute('title') || '';
+        const hasTags = /\([^()]*\S[^()]*\)/.test(raw);
+        if (!hasTags) {
+          if (span.dataset.waTgKey) revertName(span);
+          return;
+        }
+        tagged++;
+        // Marca la fila completa para que el hover muestre las ocultas
+        const row = span.closest(ROWISH_SELECTOR);
+        if (row && !row.hasAttribute('data-wa-tg-row')) row.setAttribute('data-wa-tg-row', '');
+
+        const key = raw + '|' + configVersion;
+        // Skip if already rendered (and WhatsApp hasn't overwritten our content)
+        if (span.dataset.waTgKey === key && span.querySelector('.wa-tg-bubble')) return;
+        renderName(span, raw);
+        span.dataset.waTgKey = key;
+      });
+      if (DEBUG) {
+        const msg = `[etiquetas] ${spans.length} nombres en la lista, ${tagged} con (etiquetas)`;
+        if (msg !== lastDebug) { console.log(msg); lastDebug = msg; }
+      }
+    }
+    setInterval(scanAndRender, 700);
+
+    function revertAll() {
+      document.querySelectorAll('span[data-wa-tg-key]').forEach(revertName);
+    }
+
+    // ---------------- Panel ----------------
+    const wrap = document.createElement('div');
+    wrap.className = 'wa-tg-wrap';
+    wrap.innerHTML = `
+      <div class="wa-tln-header-btns">
+        <button id="wa-tg-new-tag" class="wa-tln-hbtn">🏷️ Nueva</button>
+        <button id="wa-tg-new-fold" class="wa-tln-hbtn">📁 Carpeta</button>
+        <button id="wa-tg-gear" class="wa-tln-hbtn wa-tg-gear" title="Ajustes">⚙️</button>
+      </div>
+
+      <!-- Vista principal: solo el árbol -->
+      <div id="wa-tg-main">
+        <div id="wa-tg-tree" class="wa-tln-tree"></div>
+      </div>
+
+      <!-- Vista de ajustes (⚙️) -->
+      <div id="wa-tg-settings" class="wa-tg-settings" style="display:none;">
+        <div class="wa-tg-sec">
+          <div class="wa-tg-label">Burbujas</div>
+          <label class="wa-tg-check"><input type="checkbox" id="wa-tg-enabled"> Mostrar burbujas</label>
+          <div id="wa-tg-special" class="wa-tg-list"></div>
+        </div>
+
+        <div class="wa-tg-sec">
+          <div class="wa-tg-label">Apariencia</div>
+          <div class="wa-tg-step"><span>Tamaño <b data-look-val="font"></b></span>
+            <div class="wa-tg-step-btns"><button class="wa-tg-step-btn" data-look="font" data-d="-0.5">−</button><button class="wa-tg-step-btn" data-look="font" data-d="0.5">+</button></div></div>
+          <div class="wa-tg-step"><span>Relleno <b data-look-val="pad"></b></span>
+            <div class="wa-tg-step-btns"><button class="wa-tg-step-btn" data-look="pad" data-d="-1">−</button><button class="wa-tg-step-btn" data-look="pad" data-d="1">+</button></div></div>
+          <div class="wa-tg-step"><span>Redondez <b data-look-val="radius"></b></span>
+            <div class="wa-tg-step-btns"><button class="wa-tg-step-btn" data-look="radius" data-d="-1">−</button><button class="wa-tg-step-btn" data-look="radius" data-d="1">+</button></div></div>
+          <div class="wa-tg-preview" id="wa-tg-preview"></div>
+          <button id="wa-tg-look-reset" class="wa-tg-link">Restablecer apariencia</button>
+        </div>
+
+        <div class="wa-tg-sec">
+          <div class="wa-tg-label">Excel</div>
+          <div class="wa-tg-row">
+            <button id="wa-tg-export-tags" class="wa-tg-btn" style="flex:1;">⬇️ Etiquetas</button>
+            <button id="wa-tg-import-tags" class="wa-tg-btn" style="flex:1;">⬆️ Importar</button>
+            <input type="file" id="wa-tg-import-file" accept=".xlsx,.xls,.csv" style="display:none;">
+          </div>
+          <button id="wa-tg-export-contacts" class="wa-tg-btn">⬇️ Contactos etiquetados</button>
+        </div>
+      </div>
+
+      <div id="wa-tg-status" class="wa-tg-hint"></div>
+    `;
+
+    const $ = sel => wrap.querySelector(sel);
+    // Mensaje breve bajo la lista; se borra solo (salvo durante el escaneo)
+    let statusTimer = null;
+    const setStatus = (msg, sticky) => {
+      $('#wa-tg-status').textContent = msg || '';
+      clearTimeout(statusTimer);
+      if (msg && !sticky) statusTimer = setTimeout(() => { $('#wa-tg-status').textContent = ''; }, 5000);
+    };
+
+    function makeItem({ label, entry, hidden, copyable, dim, onColor, onToggleHidden, onDelete }) {
+      const item = document.createElement('div');
+      item.className = 'wa-tg-item';
+
+      const txt = makeTextToggle(entry, () => { save(); renderLook(); });
+      const sw = document.createElement('input');
+      sw.type = 'color';
+      sw.className = 'wa-tg-color';
+      sw.value = entry.color;
+      sw.title = 'Cambiar color';
+      sw.addEventListener('change', () => { onColor(sw.value); txt.repaint(); });
+      item.appendChild(sw);
+      item.appendChild(txt);
+
+      const chip = document.createElement('span');
+      chip.className = 'wa-tg-chip' + (dim ? ' wa-tg-chip-dim' : '');
+      chip.textContent = label;
+      if (copyable) {
+        chip.title = `Copiar (${label})`;
+        chip.onclick = () => copyText(`(${label})`, () => {
+          chip.textContent = '✅ Copiado';
+          setTimeout(() => { chip.textContent = label; }, 900);
+        });
+      }
+      item.appendChild(chip);
+
+      const eye = document.createElement('button');
+      eye.className = 'wa-tg-icon';
+      eye.textContent = hidden ? '🙈' : '👁';
+      eye.title = hidden ? 'Oculta (se ve al pasar el cursor). Clic para mostrar.' : 'Visible. Clic para ocultar.';
+      eye.onclick = onToggleHidden;
+      item.appendChild(eye);
+
+      if (onDelete) {
+        const del = document.createElement('button');
+        del.className = 'wa-tg-icon';
+        del.textContent = '🗑️';
+        del.title = 'Eliminar de la lista';
+        del.onclick = onDelete;
+        item.appendChild(del);
+      }
+      return item;
+    }
+
+    // ---------------- Árbol de carpetas + etiquetas (mismo formato que Saved Messages) ----------------
+    let draggedItem = null;
+
+    const findFolder = id => config.folders.find(f => f.id === id);
+    const findAny = id => config.tags.find(t => t.id === id) || findFolder(id);
+    // Si la carpeta padre ya no existe, el elemento se muestra en la raíz
+    const parentOf = item => (item.parentId && item.parentId !== 'root' && findFolder(item.parentId)) ? item.parentId : 'root';
+
+    function isInside(folderId, maybeAncestorId) {
+      let cur = findFolder(folderId);
+      while (cur) {
+        if (cur.id === maybeAncestorId) return true;
+        cur = findFolder(parentOf(cur));
+      }
+      return false;
+    }
+    function tagsUnder(folderId) {
+      return config.tags.filter(t => {
+        const p = parentOf(t);
+        return p === folderId || (p !== 'root' && isInside(p, folderId));
+      });
+    }
+
+    function clearDropMarks(el) { el.classList.remove('wa-tln-drop-top', 'wa-tln-drop-bottom', 'wa-tln-drop-inside'); }
+    function handleDragStart(e, id) { draggedItem = id; e.target.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id); } catch (err) { /* ignore */ } }
+    function handleDragOver(e, targetId, targetType) {
+      e.preventDefault();
+      if (!draggedItem || draggedItem === targetId) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offset = e.clientY - rect.top;
+      clearDropMarks(e.currentTarget);
+      if (targetType === 'folder' && offset > rect.height * 0.25 && offset < rect.height * 0.75) e.currentTarget.classList.add('wa-tln-drop-inside');
+      else if (offset < rect.height / 2) e.currentTarget.classList.add('wa-tln-drop-top');
+      else e.currentTarget.classList.add('wa-tln-drop-bottom');
+    }
+    function handleDrop(e, targetId, targetType) {
+      e.preventDefault();
+      clearDropMarks(e.currentTarget);
+      if (!draggedItem || draggedItem === targetId) return;
+      const dragged = findAny(draggedItem);
+      const target = findAny(targetId);
+      if (!dragged || !target) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offset = e.clientY - rect.top;
+      const draggedIsFolder = !!findFolder(dragged.id);
+
+      let newParent, newOrder = dragged.order;
+      if (targetType === 'folder' && offset > rect.height * 0.25 && offset < rect.height * 0.75) {
+        newParent = target.id;
+        newOrder = Date.now();
+      } else {
+        newParent = parentOf(target);
+        newOrder = offset < rect.height / 2 ? target.order - 0.5 : target.order + 0.5;
+      }
+      // Una carpeta no puede ir dentro de sí misma ni de sus subcarpetas
+      if (draggedIsFolder && newParent !== 'root' && (newParent === dragged.id || isInside(newParent, dragged.id))) return;
+
+      dragged.parentId = newParent;
+      dragged.order = newOrder;
+      save(false);
+      renderTree();
+    }
+    function bindDropTarget(el, id, type) {
+      el.addEventListener('dragover', e => handleDragOver(e, id, type));
+      el.addEventListener('dragleave', e => clearDropMarks(e.currentTarget));
+      el.addEventListener('drop', e => handleDrop(e, id, type));
+    }
+
+    function renderTree() {
+      const root = $('#wa-tg-tree');
+      root.innerHTML = '';
+      let counter = 0;
+
+      if (!config.tags.length && !config.folders.length) {
+        const empty = document.createElement('div');
+        empty.className = 'wa-tg-empty';
+        empty.textContent = 'Aún no hay etiquetas. Usa 🏷️ Nueva para crear una y 📁 Carpeta para organizarlas.';
+        root.appendChild(empty);
+        return;
+      }
+
+      function buildNode(parentId, container) {
+        const children = [
+          ...config.folders.filter(f => parentOf(f) === parentId).map(f => ({ item: f, type: 'folder' })),
+          ...config.tags.filter(t => parentOf(t) === parentId).map(t => ({ item: t, type: 'tag' }))
+        ].sort((a, b) => a.item.order - b.item.order);
+
+        children.forEach(({ item, type }) => {
+          const el = document.createElement('div');
+
+          if (type === 'folder') {
+            const inside = tagsUnder(item.id);
+            const allHidden = inside.length > 0 && inside.every(t => t.hidden);
+            el.className = 'wa-tln-folder-head';
+            el.draggable = true;
+            el.addEventListener('dragstart', e => handleDragStart(e, item.id));
+            el.addEventListener('dragend', e => { e.target.style.opacity = '1'; draggedItem = null; });
+            bindDropTarget(el, item.id, 'folder');
+            el.innerHTML = `
+              <span class="wa-tln-caret ${item.collapsed ? 'collapsed' : ''}">▼</span>
+              <span class="wa-tg-fold-name"></span>
+              <button class="wa-tln-btn" data-role="add" style="margin-left:auto;" title="Nueva etiqueta en esta carpeta">➕</button>
+              <button class="wa-tln-btn" data-role="eye" title="${allHidden ? 'Mostrar todas las etiquetas de la carpeta' : 'Ocultar todas las etiquetas de la carpeta'}">${allHidden ? '🙈' : '👁'}</button>
+              <button class="wa-tln-btn" data-role="edit" title="Renombrar / eliminar carpeta">⚙️</button>`;
+            el.querySelector('.wa-tg-fold-name').textContent = `📁 ${item.name} (${inside.length})`;
+
+            const content = document.createElement('div');
+            content.className = `wa-tln-folder-content ${item.collapsed ? 'collapsed' : ''}`;
+
+            el.querySelector('.wa-tln-caret').onclick = e => { e.stopPropagation(); item.collapsed = !item.collapsed; save(false); renderTree(); };
+            el.querySelector('[data-role="add"]').onclick = e => { e.stopPropagation(); createTag(item.id); };
+            el.querySelector('[data-role="eye"]').onclick = e => {
+              e.stopPropagation();
+              if (!inside.length) return;
+              inside.forEach(t => { t.hidden = !allHidden; });
+              save(); renderTree();
+            };
+            el.querySelector('[data-role="edit"]').onclick = e => {
+              e.stopPropagation();
+              const action = prompt(`Carpeta: "${item.name}"\n\nEscribe un nombre nuevo para renombrarla.\nEscribe BORRAR para eliminar la carpeta (sus etiquetas NO se borran, pasan a la carpeta de arriba).`);
+              if (!action || !action.trim()) return;
+              if (action.trim() === 'BORRAR') {
+                const up = parentOf(item);
+                config.tags.forEach(t => { if (t.parentId === item.id) t.parentId = up; });
+                config.folders.forEach(f => { if (f.parentId === item.id) f.parentId = up; });
+                config.folders = config.folders.filter(f => f.id !== item.id);
+              } else {
+                item.name = action.trim();
+              }
+              save(false); renderTree();
+            };
+
+            container.appendChild(el);
+            container.appendChild(content);
+            buildNode(item.id, content);
+          } else {
+            counter++;
+            el.className = `wa-tln-item ${counter % 2 === 0 ? 'alt-bg' : ''}`;
+            el.dataset.id = item.id;
+            el.title = `Clic para copiar (${item.name}) · arrastra ⠿ para mover`;
+            el.innerHTML = `
+              <div class="wa-tln-row">
+                <span class="wa-tln-drag-grip" draggable="true">⠿</span>
+                <input type="color" class="wa-tg-color" title="Cambiar color">
+                <div class="wa-tln-title-col"></div>
+                <div class="wa-tln-actions">
+                  <button class="wa-tln-btn" data-role="eye" title="${item.hidden ? 'Oculta (se ve al pasar el cursor). Clic para mostrar.' : 'Visible. Clic para ocultar.'}">${item.hidden ? '🙈' : '👁'}</button>
+                  <button class="wa-tln-btn" data-role="rename" title="Renombrar">✏️</button>
+                  <button class="wa-tln-btn" data-role="del" title="Quitar de la lista">🗑️</button>
+                </div>
+              </div>`;
+            const title = el.querySelector('.wa-tln-title-col');
+            title.textContent = item.name;
+            if (item.hidden) title.style.opacity = '0.55';
+
+            const sw = el.querySelector('.wa-tg-color');
+            sw.value = item.color;
+            sw.addEventListener('click', e => e.stopPropagation());
+            const txt = makeTextToggle(item, () => { save(); renderLook(); });
+            sw.after(txt);
+            sw.addEventListener('change', () => { item.color = sw.value; txt.repaint(); save(); renderLook(); });
+
+            const grip = el.querySelector('.wa-tln-drag-grip');
+            grip.addEventListener('dragstart', e => handleDragStart(e, item.id));
+            grip.addEventListener('dragend', e => { e.target.style.opacity = '1'; draggedItem = null; });
+            bindDropTarget(el, item.id, 'tag');
+
+            // Clic en la fila = copiar "(Etiqueta)"
+            el.onclick = e => {
+              e.stopPropagation();
+              if (e.target.closest('button') || e.target.classList.contains('wa-tln-drag-grip') || e.target === sw) return;
+              copyText(`(${item.name})`, () => {
+                const original = el.style.background;
+                el.style.background = 'rgba(37,211,102,0.2)';
+                title.textContent = '✅ Copiado';
+                setTimeout(() => { el.style.background = original; title.textContent = item.name; }, 700);
+              });
+            };
+            el.querySelector('[data-role="eye"]').onclick = e => { e.stopPropagation(); item.hidden = !item.hidden; save(); renderTree(); };
+            el.querySelector('[data-role="rename"]').onclick = e => {
+              e.stopPropagation();
+              const name = (prompt('Nuevo nombre de la etiqueta:', item.name) || '').replace(/[()]/g, '').trim();
+              if (!name || name === item.name) return;
+              const dup = findTag(name);
+              if (dup && dup !== item) { alert(`"${name}" ya existe.`); return; }
+              item.name = name;
+              save(); renderTree(); renderLook();
+              setStatus('Ojo: los contactos que ya tenían el nombre antiguo no cambian solos.');
+            };
+            el.querySelector('[data-role="del"]').onclick = e => {
+              e.stopPropagation();
+              if (!confirm(`¿Quitar "${item.name}" de la lista?\n\nLos contactos no cambian; esa etiqueta solo pasará al color de "Otras".`)) return;
+              config.tags = config.tags.filter(t => t !== item);
+              save(); renderTree(); renderLook();
+            };
+
+            container.appendChild(el);
+          }
+        });
+      }
+
+      buildNode('root', root);
+    }
+
+    function createTag(parentId) {
+      const raw = prompt('Nombre de la etiqueta (ej: ACN, Pagado, Generación 5):');
+      const name = (raw || '').replace(/[()]/g, '').trim();
+      if (!name) return;
+      if (findTag(name)) { alert(`"${name}" ya está en la lista.`); return; }
+      if (parentId !== 'root') { const f = findFolder(parentId); if (f) f.collapsed = false; }
+      config.tags.push({ id: newId('tag_'), name, color: nextPaletteColor(), hidden: false, parentId, order: Date.now() });
+      save();
+      setStatus('');
+      renderTree();
+      renderLook();
+    }
+
+    function renderPanel() {
+      renderTree();
+
+      const special = $('#wa-tg-special');
+      special.innerHTML = '';
+      special.appendChild(makeItem({
+        label: 'Números (cualquier número)',
+        entry: config.numbers,
+        hidden: config.numbers.hidden,
+        dim: true,
+        onColor: c => { config.numbers.color = c; save(); },
+        onToggleHidden: () => { config.numbers.hidden = !config.numbers.hidden; save(); renderPanel(); }
+      }));
+      special.appendChild(makeItem({
+        label: 'Otras (no están en la lista)',
+        entry: config.others,
+        hidden: config.others.hidden,
+        dim: true,
+        onColor: c => { config.others.color = c; save(); },
+        onToggleHidden: () => { config.others.hidden = !config.others.hidden; save(); renderPanel(); }
+      }));
+
+      $('#wa-tg-enabled').checked = config.enabled;
+      renderLook();
+    }
+
+    // ---------------- Apariencia (tamaño / relleno / redondez) ----------------
+    const LOOK_MIN = { font: 6, pad: 2, radius: 0 };
+    const LOOK_MAX = { font: 18, pad: 20, radius: 20 };
+
+    function renderLook() {
+      wrap.querySelectorAll('[data-look-val]').forEach(el => { el.textContent = config.look[el.dataset.lookVal]; });
+      const prev = $('#wa-tg-preview');
+      prev.innerHTML = '';
+      prev.appendChild(document.createTextNode('Pablo Perez'));
+      const samples = config.tags.length
+        ? config.tags.slice(0, 3).map(t => ({ label: t.name, entry: t }))
+        : [{ label: 'ACN', entry: { color: PALETTE[0] } }, { label: 'Pagado', entry: { color: PALETTE[1] } }];
+      samples.push({ label: '50000', entry: config.numbers });
+      samples.forEach(s => {
+        const b = document.createElement('span');
+        b.className = 'wa-tg-bubble';
+        b.textContent = s.label;
+        b.style.backgroundColor = s.entry.color;
+        b.style.color = textFor(s.entry);
+        applyLook(b);
+        prev.appendChild(b);
+      });
+    }
+
+    wrap.querySelectorAll('.wa-tg-step-btn').forEach(btn => {
+      btn.onclick = () => {
+        const k = btn.dataset.look;
+        const v = Math.round((config.look[k] + parseFloat(btn.dataset.d)) * 2) / 2;
+        config.look[k] = Math.min(LOOK_MAX[k], Math.max(LOOK_MIN[k], v));
+        save();
+        renderLook();
+      };
+    });
+    $('#wa-tg-look-reset').onclick = () => {
+      config.look = defaultConfig().look;
+      save();
+      renderLook();
+    };
+
+    // ⚙️ alterna entre la lista y los ajustes
+    function showSettings(open) {
+      $('#wa-tg-main').style.display = open ? 'none' : '';
+      $('#wa-tg-settings').style.display = open ? '' : 'none';
+      $('#wa-tg-gear').classList.toggle('active-filter', open);
+      $('#wa-tg-new-tag').style.display = open ? 'none' : '';
+      $('#wa-tg-new-fold').style.display = open ? 'none' : '';
+      $('#wa-tg-gear').textContent = open ? '← Volver' : '⚙️';
+      $('#wa-tg-gear').title = open ? 'Volver a la lista' : 'Ajustes';
+    }
+    $('#wa-tg-gear').onclick = () => showSettings($('#wa-tg-settings').style.display === 'none');
+
+    $('#wa-tg-new-tag').onclick = () => createTag('root');
+    $('#wa-tg-new-fold').onclick = () => {
+      const name = (prompt('Nombre de la carpeta (ej: Cursos, Pagos, Generaciones):') || '').trim();
+      if (!name) return;
+      config.folders.push({ id: newId('fld_'), name, collapsed: false, parentId: 'root', order: Date.now() });
+      save(false);
+      renderTree();
+    };
+
+    $('#wa-tg-enabled').onchange = e => {
+      config.enabled = e.target.checked;
+      save();
+      if (!config.enabled) revertAll();
+    };
+
+    // ---------------- Clipboard ----------------
+    function copyText(text, cb) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(cb).catch(() => fallbackCopy(text, cb));
+      } else fallbackCopy(text, cb);
+    }
+    function fallbackCopy(text, cb) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); cb(); } catch (e) { /* ignore */ }
+      document.body.removeChild(ta);
+    }
+
+    // ---------------- Excel / CSV helpers ----------------
+    const today = () => new Date().toISOString().slice(0, 10);
+
+    function toCsvValue(v) {
+      const s = String(v == null ? '' : v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }
+
+    function downloadSheet(rows, sheetName, fileBase) {
+      if (typeof XLSX !== 'undefined') {
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
+        XLSX.writeFile(wb, `${fileBase}_${today()}.xlsx`);
+        return 'Excel';
+      }
+      const csv = '\uFEFF' + rows.map(r => r.map(toCsvValue).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${fileBase}_${today()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return 'CSV (falta la línea @require de XLSX para Excel)';
+    }
+
     function parseCsv(text) {
       const rows = [];
       let row = [], field = '', inQuotes = false;
+      text = text.replace(/^\uFEFF/, '');
       for (let i = 0; i < text.length; i++) {
         const c = text[i];
         if (inQuotes) {
@@ -3019,1604 +4493,879 @@ LegoCore.registerBlock({
       return rows.filter(r => r.some(cell => String(cell).trim() !== ''));
     }
 
-    function extractSheetExportUrl(shareUrl) {
-      const idMatch = shareUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if (!idMatch) return null;
-      const id = idMatch[1];
-      const gidMatch = shareUrl.match(/gid=([0-9]+)/);
-      const gid = gidMatch ? gidMatch[1] : '0';
-      return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
-    }
-
-    function fetchGoogleSheetCsv(url) {
+    function readRowsFromFile(file) {
       return new Promise((resolve, reject) => {
-        if (typeof GM_xmlhttpRequest === 'undefined') {
-          reject(new Error('Falta GM_xmlhttpRequest. Agrega // @grant GM_xmlhttpRequest y // @connect docs.google.com al encabezado del script.'));
-          return;
-        }
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url,
-          onload: res => {
-            if (res.status >= 200 && res.status < 300) resolve(res.responseText);
-            else reject(new Error('Error al descargar la hoja (código ' + res.status + '). ¿Está compartida como "cualquiera con el link puede ver"?'));
-          },
-          onerror: () => reject(new Error('Error de red al descargar la hoja.'))
-        });
-      });
-    }
-
-    function applyConfigRows(rows) {
-      if (!rows || rows.length < 2) { setConfigStatus('El archivo no contiene filas de datos.'); return false; }
-
-      const header = rows[0].map(h => String(h || '').trim().toLowerCase());
-      const idx = {
-        clave: header.indexOf('clave'),
-        etiqueta: header.indexOf('etiqueta'),
-        tipo: header.indexOf('tipo'),
-        opciones: header.indexOf('opciones'),
-        colores: header.indexOf('colores'),
-        colorpordefecto: header.indexOf('colorpordefecto'),
-        oculto: header.indexOf('oculto'),
-        miles: header.indexOf('miles')
-      };
-
-      if (idx.clave === -1 || idx.etiqueta === -1 || idx.tipo === -1) {
-        setConfigStatus('El archivo necesita al menos las columnas Clave, Etiqueta y Tipo.');
-        return false;
-      }
-
-      const typeMap = { 'texto': 'text', 'número': 'number', 'numero': 'number', 'fecha': 'date', 'lista': 'select' };
-      const isTrue = v => /^(true|verdadero|1)$/i.test(String(v || '').trim());
-      const newFields = [];
-
-      for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        const key = String(r[idx.clave] || '').trim();
-        const label = String(r[idx.etiqueta] || '').trim();
-        if (!key || !label) continue;
-
-        const tipoRaw = String(r[idx.tipo] || '').trim().toLowerCase();
-        const inputType = typeMap[tipoRaw] || (['text', 'number', 'date', 'select'].includes(tipoRaw) ? tipoRaw : 'text');
-        const hidden = idx.oculto !== -1 && isTrue(r[idx.oculto]);
-        const field = { key, label, inputType, hidden };
-
-        if (inputType === 'select') {
-          const opts = (idx.opciones !== -1 ? String(r[idx.opciones] || '') : '').split(',').map(s => s.trim()).filter(Boolean);
-          const cols = (idx.colores !== -1 ? String(r[idx.colores] || '') : '').split(',').map(s => s.trim());
-          field.options = opts;
-          field.valueColors = {};
-          opts.forEach((o, oi) => { field.valueColors[o] = cols[oi] || nextPaletteColor(Object.values(field.valueColors)); });
-        } else {
-          field.color = (idx.colorpordefecto !== -1 ? String(r[idx.colorpordefecto] || '').trim() : '') || nextPaletteColor([]);
-          if (inputType === 'number') field.thousands = idx.miles !== -1 && isTrue(r[idx.miles]);
-        }
-        newFields.push(field);
-      }
-
-      if (!newFields.length) { setConfigStatus('No se encontraron campos válidos en el archivo.'); return false; }
-
-      if (!confirm(`Esto reemplazará tu configuración actual (${fields.length} campo(s)) con ${newFields.length} campo(s) importados.\n\n¿Continuar?`)) {
-        setConfigStatus('Importación cancelada.');
-        return false;
-      }
-
-      fields = newFields;
-      saveFields();
-      renderSettingsPanel();
-      renderFormFields();
-      setConfigStatus(`✅ ${newFields.length} campo(s) importados correctamente.`);
-      return true;
-    }
-
-    // ---------------- Editor state (Generator view) ----------------
-    let state = { baseName: '', values: {}, otherTags: [] };
-
-    // ---------------- Styles ----------------
-    function injectStyles() {
-      if (document.getElementById('wa-tag-styles')) return;
-      const style = document.createElement('style');
-      style.id = 'wa-tag-styles';
-      style.innerHTML = `
-        .wa-tag-wrap { display:flex; flex-direction:column; gap:10px; font-family:-apple-system,sans-serif; font-size:11px; }
-        .wa-tag-view-tabs { display:flex; gap:4px; background:rgba(255,255,255,.04); border-radius:8px; padding:3px; }
-        .wa-tag-view-tab { flex:1; background:transparent; border:none; color:var(--igls-text-dim,#96949c); padding:7px 6px; border-radius:6px; font-size:10.5px; font-weight:700; cursor:pointer; }
-        .wa-tag-view-tab.active { background:var(--igls-accent,#c9a876); color:#171208; }
-        .wa-tag-section { display:flex; flex-direction:column; gap:5px; }
-        .wa-tag-label { font-size:10.5px; color:var(--igls-text-dim,#96949c); }
-        .wa-tag-textarea { width:100%; min-height:44px; resize:vertical; background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 8px; font-size:11px; outline:none; box-sizing:border-box; }
-        .wa-tag-input { background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 8px; font-size:11px; outline:none; width:100%; box-sizing:border-box; }
-        .wa-tag-input:focus { border-color:var(--igls-accent,#c9a876); }
-        .wa-tag-input-sm { width:auto; flex:0 0 54px; text-align:center; }
-        .wa-tag-btn { background:rgba(255,255,255,.06); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 10px; font-size:11px; font-weight:600; cursor:pointer; }
-        .wa-tag-btn:hover { filter:brightness(1.15); }
-        .wa-tag-btn-accent { background:var(--igls-accent,#c9a876); color:#171208; border:none; }
-        .wa-tag-btn-icon { background:transparent; border:none; color:var(--igls-text-dim,#96949c); cursor:pointer; font-size:12px; padding:2px 5px; border-radius:4px; }
-        .wa-tag-btn-icon:hover { color:var(--igls-accent,#c9a876); background:rgba(255,255,255,.08); }
-        .wa-tag-row { display:flex; gap:6px; }
-        .wa-tag-fields-form { display:flex; flex-direction:column; gap:8px; }
-        .wa-tag-field-row { display:flex; flex-direction:column; gap:3px; }
-        .wa-tag-field-label { font-size:10.5px; color:var(--igls-text-dim,#96949c); display:flex; align-items:center; gap:5px; }
-        .wa-tag-key-badge { font-size:9px; background:rgba(255,255,255,.08); padding:1px 5px; border-radius:8px; }
-        .wa-tag-other { display:flex; flex-direction:column; gap:5px; }
-        .wa-tag-other-list { display:flex; flex-wrap:wrap; gap:5px; }
-        .wa-tag-chip { background:rgba(255,255,255,.06); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:10px; padding:3px 6px; font-size:10px; display:flex; align-items:center; gap:5px; }
-        .wa-tag-chip-remove { background:transparent; border:none; color:var(--igls-text-dim,#96949c); cursor:pointer; font-size:10px; }
-        .wa-tag-preview { background:var(--igls-surface-2,#1c1c23); border:1px dashed var(--igls-border,rgba(255,255,255,.15)); border-radius:6px; padding:8px; font-size:11px; color:var(--igls-text,#ece9e4); word-break:break-word; min-height:16px; }
-        .wa-tag-setting-card { background:rgba(255,255,255,.03); border:1px solid var(--igls-border,rgba(255,255,255,.06)); border-radius:6px; padding:6px; display:flex; flex-direction:column; gap:6px; }
-        .wa-tag-setting-row { display:flex; gap:4px; align-items:center; }
-        .wa-tag-setting-color-row { display:flex; flex-direction:column; gap:6px; }
-        .wa-tag-color-input { width:26px; height:26px; border:1px solid var(--igls-border,rgba(255,255,255,.1)); border-radius:6px; cursor:pointer; background:transparent; padding:0; flex-shrink:0; }
-        .wa-tag-option-row { display:flex; gap:4px; align-items:center; }
-        .wa-tag-setting-toggles { display:flex; gap:12px; flex-wrap:wrap; }
-        .wa-tag-setting-toggles label { display:flex; align-items:center; gap:5px; font-size:10px; color:var(--igls-text-dim,#96949c); cursor:pointer; }
-        .wa-tag-settings-divider { border-top:1px solid var(--igls-border,rgba(255,255,255,.08)); margin-top:4px; padding-top:8px; display:flex; flex-direction:column; gap:6px; }
-        .wa-tag-status { font-size:10px; color:var(--igls-text-dim,#96949c); }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // ---------------- UI shell ----------------
-    const wrap = document.createElement('div');
-    wrap.className = 'wa-tag-wrap';
-    wrap.innerHTML = `
-      <div class="wa-tag-view-tabs">
-        <button class="wa-tag-view-tab" data-view="generate">Generar nombre</button>
-        <button class="wa-tag-view-tab" data-view="settings">Configurar campos</button>
-      </div>
-
-      <div id="wa-tag-view-generate">
-        <div class="wa-tag-section">
-          <label class="wa-tag-label">Pegar nombre completo existente</label>
-          <textarea id="wa-tag-paste" class="wa-tag-textarea" placeholder="Ej: Pablo Perez [C:ACN] [S:Pagado]"></textarea>
-          <button id="wa-tag-parse-btn" class="wa-tag-btn wa-tag-btn-accent">Analizar nombre</button>
-        </div>
-
-        <div class="wa-tag-section" style="margin-top:10px;">
-          <label class="wa-tag-label">Nombre base</label>
-          <input type="text" id="wa-tag-basename" class="wa-tag-input" placeholder="Ej: Pablo Perez">
-        </div>
-
-        <div id="wa-tag-fields-form" class="wa-tag-fields-form" style="margin-top:10px;"></div>
-
-        <div id="wa-tag-other" class="wa-tag-other" style="display:none; margin-top:10px;">
-          <label class="wa-tag-label">Otras etiquetas (sin reconocer)</label>
-          <div id="wa-tag-other-list" class="wa-tag-other-list"></div>
-        </div>
-
-        <div class="wa-tag-section" style="margin-top:10px;">
-          <label class="wa-tag-label">Vista previa</label>
-          <div id="wa-tag-preview" class="wa-tag-preview"></div>
-          <div class="wa-tag-row">
-            <button id="wa-tag-copy-btn" class="wa-tag-btn wa-tag-btn-accent">📋 Copiar</button>
-            <button id="wa-tag-reset-btn" class="wa-tag-btn">Nuevo / Limpiar</button>
-          </div>
-        </div>
-      </div>
-
-      <div id="wa-tag-view-settings" style="display:none;">
-        <div id="wa-tag-settings-panel" style="display:flex; flex-direction:column; gap:8px;"></div>
-
-        <div class="wa-tag-settings-divider">
-          <label class="wa-tag-label">Configuración de campos (Excel / Google Sheets)</label>
-          <div class="wa-tag-row">
-            <button id="wa-tag-config-export-btn" class="wa-tag-btn wa-tag-btn-accent">⬇️ Exportar a Excel</button>
-            <button id="wa-tag-config-import-file-btn" class="wa-tag-btn">📁 Importar Excel/CSV</button>
-            <input type="file" id="wa-tag-config-file-input" accept=".xlsx,.xls,.csv" style="display:none;">
-          </div>
-          <input type="text" id="wa-tag-config-sheet-url" class="wa-tag-input" placeholder="https://docs.google.com/spreadsheets/d/...">
-          <button id="wa-tag-config-import-btn" class="wa-tag-btn">📥 Importar desde Google Sheets (reemplaza todo)</button>
-          <div id="wa-tag-config-status" class="wa-tag-status">Columnas esperadas: Clave, Etiqueta, Tipo, Opciones, Colores, ColorPorDefecto, Oculto, Miles.</div>
-        </div>
-      </div>
-    `;
-
-    // ---------------- View switching ----------------
-    function setView(view) {
-      localStorage.setItem(VIEW_KEY, view);
-      wrap.querySelector('#wa-tag-view-generate').style.display = view === 'generate' ? '' : 'none';
-      wrap.querySelector('#wa-tag-view-settings').style.display = view === 'settings' ? '' : 'none';
-      wrap.querySelectorAll('.wa-tag-view-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
-      if (view === 'settings') renderSettingsPanel();
-    }
-    wrap.querySelectorAll('.wa-tag-view-tab').forEach(btn => {
-      btn.onclick = () => setView(btn.dataset.view);
-    });
-
-    // ---------------- Render: dynamic field form (Generator view) ----------------
-    function renderFormFields() {
-      const container = wrap.querySelector('#wa-tag-fields-form');
-      container.innerHTML = '';
-      fields.forEach(f => {
-        const row = document.createElement('div');
-        row.className = 'wa-tag-field-row';
-        let inputHtml;
-        if (f.inputType === 'select') {
-          const opts = (f.options || []).map(o =>
-            `<option value="${o}" ${state.values[f.key] === o ? 'selected' : ''}>${o}</option>`
-          ).join('');
-          inputHtml = `<select class="wa-tag-input" data-field-key="${f.key}"><option value="">—</option>${opts}</select>`;
-        } else {
-          const type = f.inputType === 'number' ? 'number' : (f.inputType === 'date' ? 'date' : 'text');
-          const val = state.values[f.key] || '';
-          inputHtml = `<input type="${type}" class="wa-tag-input" data-field-key="${f.key}" value="${val}">`;
-        }
-        const hiddenNote = f.hidden ? ' <span class="wa-tag-key-badge" title="No se muestra como insignia">oculto</span>' : '';
-        row.innerHTML = `<label class="wa-tag-field-label">${f.label} <span class="wa-tag-key-badge">${f.key}</span>${hiddenNote}</label>${inputHtml}`;
-        container.appendChild(row);
-      });
-      container.querySelectorAll('[data-field-key]').forEach(el => {
-        const handler = () => { state.values[el.dataset.fieldKey] = el.value; updatePreview(); };
-        el.addEventListener('input', handler);
-        el.addEventListener('change', handler);
-      });
-    }
-
-    function renderOtherTags() {
-      const wrapEl = wrap.querySelector('#wa-tag-other');
-      const list = wrap.querySelector('#wa-tag-other-list');
-      list.innerHTML = '';
-      if (!state.otherTags.length) { wrapEl.style.display = 'none'; return; }
-      wrapEl.style.display = '';
-      state.otherTags.forEach((t, idx) => {
-        const chip = document.createElement('span');
-        chip.className = 'wa-tag-chip';
-        chip.innerHTML = `[${t.key}:${t.value}] <button class="wa-tag-chip-remove" data-idx="${idx}">✕</button>`;
-        list.appendChild(chip);
-      });
-      list.querySelectorAll('.wa-tag-chip-remove').forEach(btn => {
-        btn.onclick = () => {
-          state.otherTags.splice(Number(btn.dataset.idx), 1);
-          renderOtherTags();
-          updatePreview();
-        };
-      });
-    }
-
-    function updatePreview() {
-      const preview = wrap.querySelector('#wa-tag-preview');
-      preview.textContent = buildFullName(state.baseName, state.values, state.otherTags) || '—';
-    }
-
-    wrap.querySelector('#wa-tag-parse-btn').onclick = () => {
-      const raw = wrap.querySelector('#wa-tag-paste').value;
-      if (!raw.trim()) return;
-      const { baseName, found } = parseFullName(raw);
-      const knownKeys = fields.map(f => f.key);
-      state.baseName = baseName;
-      state.values = {};
-      state.otherTags = [];
-      found.forEach(t => {
-        if (knownKeys.includes(t.key)) state.values[t.key] = t.value;
-        else state.otherTags.push(t);
-      });
-      wrap.querySelector('#wa-tag-basename').value = state.baseName;
-      renderFormFields();
-      renderOtherTags();
-      updatePreview();
-    };
-
-    wrap.querySelector('#wa-tag-basename').addEventListener('input', e => {
-      state.baseName = e.target.value;
-      updatePreview();
-    });
-
-    wrap.querySelector('#wa-tag-copy-btn').onclick = () => {
-      const text = buildFullName(state.baseName, state.values, state.otherTags);
-      const btn = wrap.querySelector('#wa-tag-copy-btn');
-      const original = btn.textContent;
-      const flash = () => { btn.textContent = '✅ Copiado'; setTimeout(() => { btn.textContent = original; }, 1200); };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(flash).catch(() => fallbackCopy(text, flash));
-      } else {
-        fallbackCopy(text, flash);
-      }
-    };
-    function fallbackCopy(text, cb) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); cb(); } catch (e) { /* ignore */ }
-      document.body.removeChild(ta);
-    }
-
-    wrap.querySelector('#wa-tag-reset-btn').onclick = () => {
-      state = { baseName: '', values: {}, otherTags: [] };
-      wrap.querySelector('#wa-tag-paste').value = '';
-      wrap.querySelector('#wa-tag-basename').value = '';
-      renderFormFields();
-      renderOtherTags();
-      updatePreview();
-    };
-
-    // ---------------- Settings view: field cards ----------------
-    function renderSettingsPanel() {
-      const panel = wrap.querySelector('#wa-tag-settings-panel');
-      panel.innerHTML = '';
-
-      fields.forEach((f, idx) => {
-        const card = document.createElement('div');
-        card.className = 'wa-tag-setting-card';
-        card.innerHTML = `
-          <div class="wa-tag-setting-row">
-            <input type="text" class="wa-tag-input wa-tag-input-sm" data-role="key" value="${f.key}" maxlength="6" title="Clave, ej: C">
-            <input type="text" class="wa-tag-input" data-role="label" value="${f.label}" placeholder="Etiqueta">
-            <select class="wa-tag-input wa-tag-input-sm" data-role="type" style="flex:0 0 84px;">
-              <option value="text" ${f.inputType === 'text' ? 'selected' : ''}>Texto</option>
-              <option value="number" ${f.inputType === 'number' ? 'selected' : ''}>Número</option>
-              <option value="date" ${f.inputType === 'date' ? 'selected' : ''}>Fecha</option>
-              <option value="select" ${f.inputType === 'select' ? 'selected' : ''}>Lista</option>
-            </select>
-            <button class="wa-tag-btn-icon" data-role="up" title="Subir">↑</button>
-            <button class="wa-tag-btn-icon" data-role="down" title="Bajar">↓</button>
-            <button class="wa-tag-btn-icon" data-role="del" title="Eliminar">🗑️</button>
-          </div>
-          <div class="wa-tag-setting-toggles">
-            <label><input type="checkbox" data-role="hidden" ${f.hidden ? 'checked' : ''}> Ocultar en insignias</label>
-            ${f.inputType === 'number' ? `<label><input type="checkbox" data-role="thousands" ${f.thousands ? 'checked' : ''}> Mostrar en miles (50000 → 50)</label>` : ''}
-          </div>
-          <div class="wa-tag-setting-color-row" data-role="color-row"></div>
-        `;
-        panel.appendChild(card);
-
-        const colorRow = card.querySelector('[data-role="color-row"]');
-        function renderColorRow() {
-          colorRow.innerHTML = '';
-          if (f.inputType === 'select') {
-            f.options = f.options || [];
-            f.valueColors = f.valueColors || {};
-
-            const optList = document.createElement('div');
-            optList.style.cssText = 'display:flex; flex-direction:column; gap:4px;';
-            f.options.forEach((opt, oIdx) => {
-              const row = document.createElement('div');
-              row.className = 'wa-tag-option-row';
-              const optColor = f.valueColors[opt] || nextPaletteColor(Object.values(f.valueColors));
-              row.innerHTML = `
-                <input type="color" class="wa-tag-color-input" data-role="opt-color" value="${optColor}">
-                <input type="text" class="wa-tag-input" data-role="opt-name" value="${opt}">
-                <button class="wa-tag-btn-icon" data-role="opt-del" title="Eliminar opción">✕</button>
-              `;
-              optList.appendChild(row);
-
-              row.querySelector('[data-role="opt-color"]').addEventListener('input', e => {
-                f.valueColors[opt] = e.target.value;
-                saveFields();
-              });
-              row.querySelector('[data-role="opt-name"]').addEventListener('change', e => {
-                const newName = e.target.value.trim();
-                if (!newName) { e.target.value = opt; return; }
-                if (newName !== opt && f.options.includes(newName)) { alert('Ya existe esa opción.'); e.target.value = opt; return; }
-                const color = f.valueColors[opt];
-                delete f.valueColors[opt];
-                f.valueColors[newName] = color;
-                f.options[oIdx] = newName;
-                saveFields();
-                renderColorRow();
-                renderFormFields();
-              });
-              row.querySelector('[data-role="opt-del"]').onclick = () => {
-                delete f.valueColors[opt];
-                f.options.splice(oIdx, 1);
-                saveFields();
-                renderColorRow();
-                renderFormFields();
-              };
-            });
-            colorRow.appendChild(optList);
-
-            const addRow = document.createElement('div');
-            addRow.className = 'wa-tag-option-row';
-            addRow.innerHTML = `
-              <input type="text" class="wa-tag-input" placeholder="Nueva opción...">
-              <button class="wa-tag-btn wa-tag-btn-accent" style="flex-shrink:0;">+ Agregar</button>
-            `;
-            colorRow.appendChild(addRow);
-            const addInput = addRow.querySelector('input');
-            const addBtn = addRow.querySelector('button');
-            function doAdd() {
-              const name = addInput.value.trim();
-              if (!name) return;
-              if (f.options.includes(name)) { alert('Ya existe esa opción.'); return; }
-              f.options.push(name);
-              f.valueColors[name] = nextPaletteColor(Object.values(f.valueColors));
-              addInput.value = '';
-              saveFields();
-              renderColorRow();
-              renderFormFields();
-            }
-            addBtn.onclick = doAdd;
-            addInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
-          } else {
-            const sw = document.createElement('input');
-            sw.type = 'color';
-            sw.className = 'wa-tag-color-input';
-            sw.value = f.color || '#8ecae6';
-            colorRow.appendChild(sw);
-            sw.addEventListener('input', () => { f.color = sw.value; saveFields(); });
-          }
-        }
-        renderColorRow();
-
-        card.querySelector('[data-role="key"]').addEventListener('change', e => {
-          const newKey = e.target.value.trim().replace(/\s+/g, '');
-          if (!newKey) { e.target.value = f.key; return; }
-          if (fields.some((other, i) => i !== idx && other.key === newKey)) {
-            alert('Ya existe un campo con esa clave.');
-            e.target.value = f.key;
+        const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
+        if (isXlsx) {
+          if (typeof XLSX === 'undefined') {
+            reject(new Error('Para leer .xlsx falta la línea @require de XLSX en el encabezado. Usa un .csv o agrega la línea.'));
             return;
           }
-          f.key = newKey;
-          saveFields();
-          renderFormFields();
-        });
-        card.querySelector('[data-role="label"]').addEventListener('change', e => {
-          f.label = e.target.value.trim() || f.key;
-          saveFields();
-          renderFormFields();
-        });
-        card.querySelector('[data-role="type"]').addEventListener('change', e => {
-          f.inputType = e.target.value;
-          if (f.inputType === 'select' && !f.options) { f.options = []; f.valueColors = {}; }
-          if (f.inputType !== 'select' && !f.color) { f.color = nextPaletteColor(fields.filter(x => x.color).map(x => x.color)); }
-          if (f.inputType !== 'number') delete f.thousands;
-          saveFields();
-          renderSettingsPanel();
-          renderFormFields();
-        });
-        card.querySelector('[data-role="hidden"]').addEventListener('change', e => {
-          f.hidden = e.target.checked;
-          saveFields();
-          renderFormFields();
-        });
-        const thousandsChk = card.querySelector('[data-role="thousands"]');
-        if (thousandsChk) {
-          thousandsChk.addEventListener('change', e => {
-            f.thousands = e.target.checked;
-            saveFields();
-          });
+          reader.onload = () => {
+            try {
+              const wb = XLSX.read(new Uint8Array(reader.result), { type: 'array' });
+              const ws = wb.Sheets[wb.SheetNames[0]];
+              resolve(XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }));
+            } catch (err) { reject(err); }
+          };
+          reader.readAsArrayBuffer(file);
+        } else {
+          reader.onload = () => resolve(parseCsv(String(reader.result)));
+          reader.readAsText(file, 'utf-8');
         }
-        card.querySelector('[data-role="up"]').onclick = () => {
-          if (idx === 0) return;
-          [fields[idx - 1], fields[idx]] = [fields[idx], fields[idx - 1]];
-          saveFields(); renderSettingsPanel(); renderFormFields();
-        };
-        card.querySelector('[data-role="down"]').onclick = () => {
-          if (idx === fields.length - 1) return;
-          [fields[idx + 1], fields[idx]] = [fields[idx], fields[idx + 1]];
-          saveFields(); renderSettingsPanel(); renderFormFields();
-        };
-        card.querySelector('[data-role="del"]').onclick = () => {
-          if (!confirm(`¿Eliminar el campo "${f.label}"?`)) return;
-          fields.splice(idx, 1);
-          saveFields(); renderSettingsPanel(); renderFormFields();
-        };
       });
-
-      const addBtn = document.createElement('button');
-      addBtn.className = 'wa-tag-btn wa-tag-btn-accent';
-      addBtn.textContent = '+ Agregar campo';
-      addBtn.onclick = () => {
-        const usedColors = fields.filter(f => f.color).map(f => f.color);
-        fields.push({ key: 'X' + (fields.length + 1), label: 'Nuevo campo', inputType: 'text', color: nextPaletteColor(usedColors) });
-        saveFields();
-        renderSettingsPanel();
-        renderFormFields();
-      };
-      panel.appendChild(addBtn);
     }
 
-    // ---------------- Field config: Excel export ----------------
-    wrap.querySelector('#wa-tag-config-export-btn').onclick = () => {
-      if (typeof XLSX === 'undefined') {
-        alert('Falta la librería XLSX. Agrega esta línea al encabezado de tu script de Tampermonkey:\n\n// @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js\n\nLuego recarga WhatsApp Web.');
-        return;
-      }
-      const typeLabel = { text: 'Texto', number: 'Número', date: 'Fecha', select: 'Lista' };
-      const rows = fields.map(f => ({
-        Clave: f.key,
-        Etiqueta: f.label,
-        Tipo: typeLabel[f.inputType] || f.inputType,
-        Opciones: f.inputType === 'select' ? (f.options || []).join(',') : '',
-        Colores: f.inputType === 'select' ? (f.options || []).map(o => (f.valueColors && f.valueColors[o]) || '').join(',') : '',
-        ColorPorDefecto: f.inputType !== 'select' ? (f.color || '') : '',
-        Oculto: f.hidden ? 'TRUE' : 'FALSE',
-        Miles: f.thousands ? 'TRUE' : 'FALSE'
-      }));
-      const ws = XLSX.utils.json_to_sheet(rows, { header: ['Clave', 'Etiqueta', 'Tipo', 'Opciones', 'Colores', 'ColorPorDefecto', 'Oculto', 'Miles'] });
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Campos');
-      XLSX.writeFile(wb, `config_campos_contactos_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    // ---------------- Export / import tag list ----------------
+    $('#wa-tg-export-tags').onclick = () => {
+      // Ruta de carpeta tipo "Cursos / 2026" (vacía = raíz)
+      const folderPath = parentId => {
+        const parts = [];
+        let cur = parentId !== 'root' ? findFolder(parentId) : null;
+        while (cur) { parts.unshift(cur.name); cur = findFolder(parentOf(cur)); }
+        return parts.join(' / ');
+      };
+      // Mismo orden que se ve en el panel
+      const ordered = [];
+      (function walk(pid) {
+        [...config.folders.filter(f => parentOf(f) === pid).map(f => ({ f })),
+         ...config.tags.filter(t => parentOf(t) === pid).map(t => ({ t }))]
+          .sort((a, b) => (a.f || a.t).order - (b.f || b.t).order)
+          .forEach(x => { if (x.f) walk(x.f.id); else ordered.push(x.t); });
+      })('root');
+
+      const txtLabel = e => e.text === 'black' ? 'Negro' : e.text === 'white' ? 'Blanco' : '';
+      const rows = [['Etiqueta', 'Color', 'Texto', 'Oculta', 'Carpeta']];
+      ordered.forEach(t => rows.push([t.name, t.color, txtLabel(t), t.hidden ? 'Sí' : 'No', folderPath(parentOf(t))]));
+      // Carpetas vacías también viajan (fila sin etiqueta)
+      config.folders.filter(f => !tagsUnder(f.id).length).forEach(f => rows.push(['', '', '', '', folderPath(f.id)]));
+      rows.push([NUMBERS_LABEL, config.numbers.color, txtLabel(config.numbers), config.numbers.hidden ? 'Sí' : 'No', '']);
+      rows.push([OTHERS_LABEL, config.others.color, txtLabel(config.others), config.others.hidden ? 'Sí' : 'No', '']);
+      const fmt = downloadSheet(rows, 'Etiquetas', 'etiquetas_whatsapp');
+      setStatus(`Lista exportada en ${fmt}.`);
     };
 
-    // ---------------- Field config: Local File (XLSX/CSV) & Google Sheets import ----------------
-    function setConfigStatus(msg) { wrap.querySelector('#wa-tag-config-status').textContent = msg; }
+    $('#wa-tg-import-tags').onclick = () => $('#wa-tg-import-file').click();
 
-    const fileInput = wrap.querySelector('#wa-tag-config-file-input');
-    const importFileBtn = wrap.querySelector('#wa-tag-config-import-file-btn');
-
-    importFileBtn.onclick = () => fileInput.click();
-
-    fileInput.addEventListener('change', e => {
+    $('#wa-tg-import-file').addEventListener('change', async e => {
       const file = e.target.files && e.target.files[0];
+      e.target.value = '';
       if (!file) return;
+      let rows;
+      try { rows = await readRowsFromFile(file); }
+      catch (err) { setStatus(err.message); return; }
 
-      const isXlsx = /\.(xlsx|xls)$/i.test(file.name);
+      if (!rows || rows.length < 2) { setStatus('El archivo no tiene filas.'); return; }
+      const header = rows[0].map(h => norm(h));
+      const iName = header.indexOf('etiqueta');
+      const iColor = header.indexOf('color');
+      const iHidden = header.indexOf('oculta');
+      const iText = header.indexOf('texto');
+      const iFolder = header.indexOf('carpeta');
+      if (iName === -1) { setStatus('Falta la columna "Etiqueta".'); return; }
 
-      if (isXlsx) {
-        if (typeof XLSX === 'undefined') {
-          alert('Falta la librería XLSX para procesar libros Excel. Agrega esta línea al encabezado de Tampermonkey:\n\n// @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
-          fileInput.value = '';
-          return;
+      // Carpetas: se crean a partir de la ruta "A / B"
+      const newFolders = [];
+      let orderSeq = 0;
+      const folderFor = path => {
+        const parts = String(path || '').split('/').map(s => s.trim()).filter(Boolean);
+        let parent = 'root';
+        parts.forEach(name => {
+          let f = newFolders.find(x => x.parentId === parent && norm(x.name) === norm(name));
+          if (!f) { f = { id: newId('fld_'), name, collapsed: false, parentId: parent, order: orderSeq++ }; newFolders.push(f); }
+          parent = f.id;
+        });
+        return parent;
+      };
+
+      const isTrue = v => /^(sí|si|true|verdadero|1|x)$/i.test(String(v || '').trim());
+      const validColor = v => /^#[0-9a-f]{6}$/i.test(String(v || '').trim()) ? String(v).trim() : null;
+
+      const newTags = [];
+      let numbers = config.numbers, others = config.others;
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        const name = String(r[iName] || '').replace(/[()]/g, '').trim();
+        const rawName = String(r[iName] || '').trim();
+        const folderPathCell = iFolder !== -1 ? r[iFolder] : '';
+        if (!name) {
+          if (folderPathCell) folderFor(folderPathCell); // carpeta vacía
+          continue;
         }
+        const color = (iColor !== -1 && validColor(r[iColor])) || null;
+        const hidden = iHidden !== -1 && isTrue(r[iHidden]);
+        const txtRaw = iText !== -1 ? norm(r[iText]) : '';
+        const text = /^(negro|black)$/.test(txtRaw) ? 'black' : /^(blanco|white)$/.test(txtRaw) ? 'white' : undefined;
 
-        const reader = new FileReader();
-        reader.onload = evt => {
-          try {
-            const data = new Uint8Array(evt.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-            applyConfigRows(rows);
-          } catch (err) {
-            setConfigStatus('Error al leer el archivo Excel: ' + err.message);
-          } finally {
-            fileInput.value = '';
-          }
-        };
-        reader.onerror = () => {
-          setConfigStatus('Error al abrir el archivo Excel local.');
-          fileInput.value = '';
-        };
-        reader.readAsArrayBuffer(file);
-      } else {
-        const reader = new FileReader();
-        reader.onload = evt => {
-          try {
-            const csvText = evt.target.result;
-            const rows = parseCsv(csvText);
-            applyConfigRows(rows);
-          } catch (err) {
-            setConfigStatus('Error al leer el archivo CSV: ' + err.message);
-          } finally {
-            fileInput.value = '';
-          }
-        };
-        reader.onerror = () => {
-          setConfigStatus('Error al abrir el archivo local.');
-          fileInput.value = '';
-        };
-        reader.readAsText(file);
+        if (rawName === NUMBERS_LABEL) { numbers = { color: color || numbers.color, hidden, text }; continue; }
+        if (rawName === OTHERS_LABEL) { others = { color: color || others.color, hidden, text }; continue; }
+        if (newTags.some(t => norm(t.name) === norm(name))) continue;
+        const parentId = folderFor(folderPathCell);
+        newTags.push({ id: newId('tag_'), name, color: color || PALETTE[newTags.length % PALETTE.length], hidden, text, parentId, order: orderSeq++ });
       }
-    });
 
-    wrap.querySelector('#wa-tag-config-import-btn').onclick = async () => {
-      const url = wrap.querySelector('#wa-tag-config-sheet-url').value.trim();
-      if (!url) { setConfigStatus('Pega primero un link de Google Sheets.'); return; }
-      const exportUrl = extractSheetExportUrl(url);
-      if (!exportUrl) { setConfigStatus('No se pudo leer el ID de la hoja en ese link.'); return; }
-
-      setConfigStatus('Descargando hoja...');
-      let csvText;
-      try {
-        csvText = await fetchGoogleSheetCsv(exportUrl);
-      } catch (err) {
-        setConfigStatus(err.message);
+      if (!newTags.length) { setStatus('No se encontraron etiquetas en el archivo.'); return; }
+      const folderNote = newFolders.length ? ` en ${newFolders.length} carpeta(s)` : '';
+      if (!confirm(`Esto reemplazará tu lista actual (${config.tags.length} etiqueta(s), ${config.folders.length} carpeta(s)) por ${newTags.length} etiqueta(s)${folderNote} del archivo.\n\n¿Continuar?`)) {
+        setStatus('Importación cancelada.');
         return;
       }
-
-      const rows = parseCsv(csvText);
-      applyConfigRows(rows);
-    };
-
-    // ---------------- Mount ----------------
-    function mountCard(attemptsLeft) {
-      attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
-      if (typeof core.registerMenu === 'function') {
-        injectStyles();
-        core.registerMenu('left', '🏷️ Editor de Contactos', wrap, '⠿', 'contact-tag-editor');
-        renderFormFields();
-        renderOtherTags();
-        updatePreview();
-        setView(localStorage.getItem(VIEW_KEY) === 'settings' ? 'settings' : 'generate');
-      } else if (attemptsLeft > 0) {
-        setTimeout(() => mountCard(attemptsLeft - 1), 200);
-      }
-    }
-    mountCard();
-
-    core.emit('block:ready', { id: 'contactTagEditorPlugin' });
-  }
-});
-
-/* ============================================================
-   BLOCK: Contact Badge Renderer (v6)
-   ============================================================ */
-/* ============================================================
-   BLOCK 2: Contact Badge Renderer (v7)
-   ------------------------------------------------------------
-   Standalone plugin -- reads the SAME localStorage config that
-   Block 1 (Contact Tag Editor) writes to ("wa_tag_fields_v1").
-
-   v7 additions:
-   - Respects each field's "hidden" flag (set in Block 1) -- a
-     hidden field's tag is skipped in the pill row, but still
-     exists in the actual contact name and still shows up in the
-     hover tooltip. Nothing is ever deleted, just not shown as a
-     pill.
-   - Respects each field's "thousands" flag (number fields only,
-     set in Block 1) -- the pill shows value/1000 rounded (e.g.
-     50000 -> 50). This is a DISPLAY-ONLY shorthand: the raw value
-     in the contact name is untouched, and the tooltip always
-     shows the full raw value.
-   - New hover tooltip: hovering a tagged contact shows every tag
-     (including hidden ones) as "Label: value", one per line, in
-     save order -- a full always-available reference regardless of
-     what's toggled visible as a pill.
-
-   BEHAVIOR (unchanged from v6):
-   - Headline is always the base name exactly as saved.
-   - Pills render in the order the tags appear in the saved name.
-   - Works by overriding WhatsApp's own ellipsis-truncation CSS on
-     the name span, then writing headline + pills directly into it.
-
-   PILL APPEARANCE CONTROLS (unchanged from v6)
-   Tamaño de texto / Relleno / Radio de esquina, live +/- steppers.
-   Per-FIELD colors are configured in Block 1.
-
-   DEBUGGING
-   DEBUG is on by default -- logs a scan summary every 700ms.
-   Set DEBUG = false once everything looks right.
-   ============================================================ */
-LegoCore.registerBlock({
-  id: 'contactBadgeRendererPlugin',
-  init(core) {
-    const DEBUG = true;
-
-    const FIELDS_KEY = 'wa_tag_fields_v1';
-    const MASTER_KEY = 'wa_tag_badges_master_v1';
-    const FONT_KEY = 'wa_tag_pill_font_v1';
-    const PAD_KEY = 'wa_tag_pill_pad_v1';
-    const RADIUS_KEY = 'wa_tag_pill_radius_v1';
-
-    const DEFAULT_FIELDS = [
-      { key: 'C', label: 'Curso', inputType: 'text', color: '#8ecae6' },
-      { key: 'G', label: 'Generación', inputType: 'text', color: '#c792ea' },
-      { key: 'V', label: 'Vence', inputType: 'date', color: '#ff9770' },
-      { key: 'H', label: 'Hijo/Alumno', inputType: 'text', color: '#7ee787' },
-      { key: 'E', label: 'Edad', inputType: 'number', color: '#f6c344' },
-      { key: 'P', label: 'Precio', inputType: 'number', color: '#c9a876', thousands: true },
-      { key: 'S', label: 'Pago', inputType: 'select', options: ['Pagado', 'Pendiente'], valueColors: { 'Pagado': '#7ee787', 'Pendiente': '#ff8fa3' } },
-      { key: 'A', label: 'Activo', inputType: 'select', options: ['Activo', 'Inactivo'], valueColors: { 'Activo': '#7ee787', 'Inactivo': '#96949c' } },
-      { key: 'F', label: 'Formulario', inputType: 'select', options: ['Sí', 'No'], valueColors: { 'Sí': '#7ee787', 'No': '#96949c' } }
-    ];
-
-    function getFields() {
-      try {
-        const f = JSON.parse(localStorage.getItem(FIELDS_KEY));
-        if (Array.isArray(f) && f.length) return f;
-      } catch (e) { /* ignore */ }
-      return DEFAULT_FIELDS;
-    }
-
-    let masterEnabled = localStorage.getItem(MASTER_KEY) !== 'false';
-    function saveMaster() { localStorage.setItem(MASTER_KEY, String(masterEnabled)); }
-
-    function getFont() { const v = parseFloat(localStorage.getItem(FONT_KEY)); return Number.isFinite(v) ? v : 9.5; }
-    function setFont(v) { localStorage.setItem(FONT_KEY, String(Math.max(6, v))); }
-    function getPad() { const v = parseFloat(localStorage.getItem(PAD_KEY)); return Number.isFinite(v) ? v : 7; }
-    function setPad(v) { localStorage.setItem(PAD_KEY, String(Math.max(2, v))); }
-    function getRadius() { const v = parseFloat(localStorage.getItem(RADIUS_KEY)); return Number.isFinite(v) ? v : 8; }
-    function setRadius(v) { localStorage.setItem(RADIUS_KEY, String(Math.max(0, v))); }
-
-    // ---------------- Parsing (same format as Block 1) ----------------
-    function parseFullName(raw) {
-      const tagRe = /\[(\w+):([^\]]*)\]/g;
-      const found = [];
-      let m;
-      while ((m = tagRe.exec(raw)) !== null) found.push({ key: m[1], value: m[2].trim() });
-      const firstBracket = raw.indexOf('[');
-      const baseName = (firstBracket === -1 ? raw : raw.slice(0, firstBracket)).trim();
-      return { baseName, found };
-    }
-
-    function contrastColor(hex) {
-      if (!hex || hex[0] !== '#' || hex.length < 7) return '#000000';
-      const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      return luminance > 0.6 ? '#000000' : '#ffffff';
-    }
-
-    // ---------------- Styles ----------------
-    function injectStyles() {
-      if (document.getElementById('wa-tag-badge-styles')) return;
-      const style = document.createElement('style');
-      style.id = 'wa-tag-badge-styles';
-      style.innerHTML = `
-        .wa-tag-badge-pill { font-weight:700; line-height:1.6; white-space:nowrap; }
-        .wa-tag-badges-wrap { display:flex; flex-direction:column; gap:8px; font-family:-apple-system,sans-serif; font-size:11px; }
-        .wa-tag-badges-master { display:flex; align-items:center; justify-content:space-between; background:var(--igls-surface-2,#1c1c23); border:1px solid var(--igls-border,rgba(255,255,255,.07)); border-radius:6px; padding:6px 8px; gap:8px; }
-        .wa-tag-badges-master label { display:flex; align-items:center; gap:6px; cursor:pointer; font-size:10.5px; color:var(--igls-text-dim,#96949c); }
-        .wa-tag-badges-note { font-size:10px; color:var(--igls-text-dim,#96949c); line-height:1.5; }
-        .wa-tag-btn-icon { background:rgba(255,255,255,.06); border:1px solid var(--igls-border,rgba(255,255,255,.08)); color:var(--igls-text,#ece9e4); cursor:pointer; font-size:13px; font-weight:700; width:24px; height:24px; border-radius:5px; }
-        .wa-tag-btn-icon:hover { color:var(--igls-accent,#c9a876); }
-        .wa-tag-tooltip { position:fixed; z-index:99999; background:#171208; color:#ece9e4; border:1px solid rgba(255,255,255,.15); border-radius:6px; padding:8px 10px; font-size:11px; font-family:-apple-system,sans-serif; box-shadow:0 4px 16px rgba(0,0,0,.4); max-width:280px; display:none; pointer-events:none; }
-        .wa-tag-tooltip-row { white-space:nowrap; padding:1px 0; }
-        .wa-tag-tooltip-label { color:#c9a876; font-weight:700; margin-right:4px; }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // ---------------- Sidebar card ----------------
-    const wrap = document.createElement('div');
-    wrap.className = 'wa-tag-badges-wrap';
-    wrap.innerHTML = `
-      <div class="wa-tag-badges-master">
-        <label><input type="checkbox" id="wa-tag-badges-master-chk" ${masterEnabled ? 'checked' : ''}> Mostrar insignias</label>
-      </div>
-      <div class="wa-tag-badges-master">
-        <label style="cursor:default;">Tamaño de texto: <b id="wa-tag-font-val">${getFont()}</b>px</label>
-        <div style="display:flex; gap:4px;">
-          <button id="wa-tag-font-down" class="wa-tag-btn-icon">−</button>
-          <button id="wa-tag-font-up" class="wa-tag-btn-icon">+</button>
-        </div>
-      </div>
-      <div class="wa-tag-badges-master">
-        <label style="cursor:default;">Relleno: <b id="wa-tag-pad-val">${getPad()}</b>px</label>
-        <div style="display:flex; gap:4px;">
-          <button id="wa-tag-pad-down" class="wa-tag-btn-icon">−</button>
-          <button id="wa-tag-pad-up" class="wa-tag-btn-icon">+</button>
-        </div>
-      </div>
-      <div class="wa-tag-badges-master">
-        <label style="cursor:default;">Radio de esquina: <b id="wa-tag-radius-val">${getRadius()}</b>px</label>
-        <div style="display:flex; gap:4px;">
-          <button id="wa-tag-radius-down" class="wa-tag-btn-icon">−</button>
-          <button id="wa-tag-radius-up" class="wa-tag-btn-icon">+</button>
-        </div>
-      </div>
-      <div class="wa-tag-badges-note">Los colores, el ocultar campos y "mostrar en miles" se configuran por campo en el bloque "Editor de Contactos". Aquí solo se ajusta el tamaño/forma general de las insignias. Pasa el cursor sobre un contacto etiquetado para ver todos sus datos, incluidos los campos ocultos.</div>
-    `;
-
-    wrap.querySelector('#wa-tag-badges-master-chk').onchange = e => {
-      masterEnabled = e.target.checked;
-      saveMaster();
-      if (!masterEnabled) {
-        document.querySelectorAll('span[data-wa-tag-inline-source]').forEach(span => revertInlineSpan(span));
-        hideTooltip();
-      }
-    };
-
-    function bumpFont(delta) { setFont(getFont() + delta); wrap.querySelector('#wa-tag-font-val').textContent = getFont(); }
-    function bumpPad(delta) { setPad(getPad() + delta); wrap.querySelector('#wa-tag-pad-val').textContent = getPad(); }
-    function bumpRadius(delta) { setRadius(getRadius() + delta); wrap.querySelector('#wa-tag-radius-val').textContent = getRadius(); }
-
-    wrap.querySelector('#wa-tag-font-down').onclick = () => bumpFont(-0.5);
-    wrap.querySelector('#wa-tag-font-up').onclick = () => bumpFont(0.5);
-    wrap.querySelector('#wa-tag-pad-down').onclick = () => bumpPad(-1);
-    wrap.querySelector('#wa-tag-pad-up').onclick = () => bumpPad(1);
-    wrap.querySelector('#wa-tag-radius-down').onclick = () => bumpRadius(-1);
-    wrap.querySelector('#wa-tag-radius-up').onclick = () => bumpRadius(1);
-
-    // ---------------- Hover tooltip (full detail, including hidden fields) ----------------
-    let tooltipEl = null;
-    function ensureTooltip() {
-      if (tooltipEl) return tooltipEl;
-      tooltipEl = document.createElement('div');
-      tooltipEl.className = 'wa-tag-tooltip';
-      document.body.appendChild(tooltipEl);
-      return tooltipEl;
-    }
-    function showTooltip(span) {
-      const rawName = span.getAttribute('title') || '';
-      const { found } = parseFullName(rawName);
-      const fields = getFields();
-      const fieldByKey = {};
-      fields.forEach(f => { fieldByKey[f.key] = f; });
-
-      const lines = found.map(t => {
-        const field = fieldByKey[t.key];
-        if (!field || !t.value) return null;
-        return `<div class="wa-tag-tooltip-row"><span class="wa-tag-tooltip-label">${field.label}:</span>${t.value}</div>`;
-      }).filter(Boolean);
-      if (!lines.length) return;
-
-      const tip = ensureTooltip();
-      tip.innerHTML = lines.join('');
-      const rect = span.getBoundingClientRect();
-      tip.style.display = 'block';
-      const tipRect = tip.getBoundingClientRect();
-      let left = rect.left;
-      if (left + tipRect.width > window.innerWidth - 8) left = window.innerWidth - tipRect.width - 8;
-      tip.style.left = Math.max(8, left) + 'px';
-      tip.style.top = (rect.bottom + 4) + 'px';
-    }
-    function hideTooltip() {
-      if (tooltipEl) tooltipEl.style.display = 'none';
-    }
-    function bindHoverTooltip(span) {
-      if (span.__waTagHoverBound) return;
-      span.__waTagHoverBound = true;
-      span.addEventListener('mouseenter', () => showTooltip(span));
-      span.addEventListener('mouseleave', hideTooltip);
-    }
-
-    // ---------------- Apply / revert ----------------
-    function applyInlineMode(span, rawName) {
-      const { baseName, found } = parseFullName(rawName);
-      const fields = getFields();
-      const fieldByKey = {};
-      fields.forEach(f => { fieldByKey[f.key] = f; });
-
-      const fontSize = getFont();
-      const padH = getPad();
-      const padV = Math.max(1, Math.round(padH / 3));
-      const radius = getRadius();
-
-      // Override just the properties that cause WhatsApp's ellipsis clipping.
-      span.style.whiteSpace = 'normal';
-      span.style.overflow = 'visible';
-      span.style.textOverflow = 'unset';
-      span.style.maxWidth = 'none';
-      span.style.display = 'inline-flex';
-      span.style.flexWrap = 'wrap';
-      span.style.alignItems = 'center';
-      span.style.gap = '4px';
-      span.style.lineHeight = '1.6';
-
-      span.innerHTML = '';
-      span.appendChild(document.createTextNode(baseName || ''));
-
-      let pillCount = 0;
-      found.forEach(t => {
-        const field = fieldByKey[t.key];
-        if (!field || !t.value || field.hidden) return;
-        let bg = field.color;
-        if (field.inputType === 'select' && field.valueColors) {
-          bg = field.valueColors[t.value] || field.color || '#8ecae6';
-        }
-        if (!bg) return;
-
-        let displayValue = t.value;
-        if (field.inputType === 'number' && field.thousands) {
-          const num = parseFloat(t.value);
-          if (Number.isFinite(num)) displayValue = String(Math.round(num / 1000));
-        }
-
-        const pill = document.createElement('span');
-        pill.className = 'wa-tag-badge-pill';
-        pill.style.backgroundColor = bg;
-        pill.style.color = contrastColor(bg);
-        pill.style.fontSize = fontSize + 'px';
-        pill.style.padding = `${padV}px ${padH}px`;
-        pill.style.borderRadius = radius + 'px';
-        pill.textContent = displayValue;
-        span.appendChild(pill);
-        pillCount++;
-      });
-
-      bindHoverTooltip(span);
-
-      if (!pillCount) {
-        // Still worth keeping the tooltip binding even if every matching
-        // field is hidden -- but with nothing visibly changed, revert the
-        // span text so it doesn't look broken/empty.
-        if (found.some(t => fieldByKey[t.key])) return true; // has recognized (if hidden) tags -- keep tooltip active, span already shows base name
-        revertInlineSpan(span);
-        return false;
-      }
-      return true;
-    }
-
-    function revertInlineSpan(span) {
-      span.style.whiteSpace = '';
-      span.style.overflow = '';
-      span.style.textOverflow = '';
-      span.style.maxWidth = '';
-      span.style.display = '';
-      span.style.flexWrap = '';
-      span.style.alignItems = '';
-      span.style.gap = '';
-      span.style.lineHeight = '';
-      span.textContent = span.getAttribute('title') || '';
-      delete span.dataset.waTagInlineSource;
-    }
-
-    // ---------------- Scan loop ----------------
-    function scanAndRender() {
-      if (!masterEnabled) return;
-      const scopeRoot = document.querySelector('#pane-side') || document;
-      const spans = scopeRoot.querySelectorAll('span[title]');
-      const font = getFont(), pad = getPad(), radius = getRadius();
-      let processed = 0;
-
-      spans.forEach(span => {
-        const rawName = span.getAttribute('title') || '';
-        if (!rawName.includes('[')) {
-          if (span.dataset.waTagInlineSource) revertInlineSpan(span);
-          return;
-        }
-        const cacheKey = `${rawName}|${font}|${pad}|${radius}`;
-        if (span.dataset.waTagInlineSource === cacheKey) { processed++; return; }
-
-        const styled = applyInlineMode(span, rawName);
-        if (styled) { span.dataset.waTagInlineSource = cacheKey; processed++; }
-      });
-
-      if (DEBUG) console.log(`[wa-tag-badges] scan: ${spans.length} span[title], ${processed} procesadas`);
-    }
-
-    setInterval(scanAndRender, 700);
-
-    // ---------------- Mount ----------------
-    function mountCard(attemptsLeft) {
-      attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
-      if (typeof core.registerMenu === 'function') {
-        injectStyles();
-        core.registerMenu('left', '🎨 Insignias de Contacto', wrap, '⠿', 'contact-tag-badges');
-      } else if (attemptsLeft > 0) {
-        setTimeout(() => mountCard(attemptsLeft - 1), 200);
-      }
-    }
-    mountCard();
-
-    core.emit('block:ready', { id: 'contactBadgeRendererPlugin' });
-  }
-});
-
-/* ============================================================
-   BLOCK: Dashboard Export (v3)
-   ============================================================ */
-/* ============================================================
-   BLOCK 3: Contact Tag Dashboard, Export & Import (v3)
-   ------------------------------------------------------------
-   Standalone plugin -- reads the SAME "wa_tag_fields_v1" config
-   as Blocks 1 and 2, fresh from localStorage on each action.
-
-   v3 additions (on top of v2):
-   3) "Importar CSV manual" -- lets you either paste CSV text
-      directly into a textarea, or upload a .csv file from disk,
-      and generates the same ready-to-copy tagged name strings
-      as the Google Sheets import. Useful when the spreadsheet
-      isn't public, or you just have a local export. Shares the
-      exact same header-matching + results/copy UI as the
-      Google Sheets import.
-
-   v2 additions (unchanged):
-   1) "Exportar a Excel (.xlsx)" -- a real Excel file, not just
-      CSV. This needs the SheetJS library loaded globally as
-      `XLSX`. Add this line to your Tampermonkey script's header
-      metadata block (the // @... lines at the top):
-
-        // @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js
-
-      Without that line the button will alert you instead of
-      silently failing.
-
-   2) "Importar desde Google Sheets" -- paste a public Google
-      Sheets share link (Anyone with the link can view) and this
-      fetches it as CSV, matches its header row to your configured
-      field LABELS (Nombre, Curso, Generación, ...), and shows a
-      preview table of ready-to-paste tagged name strings -- one
-      per spreadsheet row, each with its own Copy button, plus a
-      "Copiar todo" for the whole batch. This does NOT rename
-      WhatsApp contacts for you (no API for that) -- it only
-      bulk-generates the strings so you're not retyping each
-      student by hand.
-
-      This needs Tampermonkey's GM_xmlhttpRequest (a plain
-      fetch() gets blocked by Google's CORS policy from
-      WhatsApp's page). Add these two lines to your script header:
-
-        // @grant GM_xmlhttpRequest
-        // @connect docs.google.com
-
-   Everything else (scan all chats, table, sort/filter, CSV
-   export, jump to chat) is unchanged from v1.
-   ============================================================ */
-LegoCore.registerBlock({
-  id: 'contactTagDashboardPlugin',
-  init(core) {
-    // ---------------- SELECTORS -- ADJUST IF NEEDED ----------------
-    const ROW_SELECTOR = '#pane-side div[role="listitem"]';
-    const NAME_SELECTOR = 'span[title]';
-    const SCROLL_CONTAINER_SELECTOR = '#pane-side [role="grid"], #pane-side';
-    // -----------------------------------------------------------------
-
-    const FIELDS_KEY = 'wa_tag_fields_v1';
-
-    const DEFAULT_FIELDS = [
-      { key: 'C', label: 'Curso', inputType: 'text', color: '#8ecae6' },
-      { key: 'G', label: 'Generación', inputType: 'text', color: '#c792ea' },
-      { key: 'V', label: 'Vence', inputType: 'date', color: '#ff9770' },
-      { key: 'H', label: 'Hijo/Alumno', inputType: 'text', color: '#7ee787' },
-      { key: 'E', label: 'Edad', inputType: 'number', color: '#f6c344' },
-      { key: 'P', label: 'Precio', inputType: 'number', color: '#c9a876', thousands: true },
-      { key: 'S', label: 'Pago', inputType: 'select', options: ['Pagado', 'Pendiente'], valueColors: { 'Pagado': '#7ee787', 'Pendiente': '#ff8fa3' } },
-      { key: 'A', label: 'Activo', inputType: 'select', options: ['Activo', 'Inactivo'], valueColors: { 'Activo': '#7ee787', 'Inactivo': '#96949c' } },
-      { key: 'F', label: 'Formulario', inputType: 'select', options: ['Sí', 'No'], valueColors: { 'Sí': '#7ee787', 'No': '#96949c' } }
-    ];
-
-    function getFields() {
-      try {
-        const f = JSON.parse(localStorage.getItem(FIELDS_KEY));
-        if (Array.isArray(f) && f.length) return f;
-      } catch (e) { /* ignore */ }
-      return DEFAULT_FIELDS;
-    }
-
-    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-    // ---------------- Parsing (same format as Blocks 1 & 2) ----------------
-    function parseFullName(raw) {
-      const tagRe = /\[(\w+):([^\]]*)\]/g;
-      const found = [];
-      let m;
-      while ((m = tagRe.exec(raw)) !== null) found.push({ key: m[1], value: m[2].trim() });
-      const firstBracket = raw.indexOf('[');
-      const baseName = (firstBracket === -1 ? raw : raw.slice(0, firstBracket)).trim();
-      return { baseName, found };
-    }
-
-    function buildFullName(baseName, values, fields) {
-      const parts = [];
-      if (baseName && baseName.trim()) parts.push(baseName.trim());
-      fields.forEach(f => {
-        const v = values[f.key];
-        if (v !== undefined && v !== null && String(v).trim() !== '') {
-          parts.push(`[${f.key}:${String(v).trim()}]`);
-        }
-      });
-      return parts.join(' ');
-    }
-
-    // ---------------- State ----------------
-    let allContacts = [];   // [{ rawName, baseName, values: {key:value} }]
-    let filtered = [];
-    let sortState = { key: null, dir: 1 };
-    let searchTerm = '';
-    let quickFilters = {};  // { fieldKey: value }
-    let importedRows = [];  // [{ baseName, values, generated }]
-
-    // ---------------- Styles ----------------
-    function injectStyles() {
-      if (document.getElementById('wa-tag-dash-styles')) return;
-      const style = document.createElement('style');
-      style.id = 'wa-tag-dash-styles';
-      style.innerHTML = `
-        .wa-tag-dash-wrap { display:flex; flex-direction:column; gap:8px; font-family:-apple-system,sans-serif; font-size:11px; }
-        .wa-tag-dash-btn { background:var(--igls-accent,#c9a876); color:#171208; border:none; border-radius:6px; padding:7px 10px; font-size:11px; font-weight:700; cursor:pointer; }
-        .wa-tag-dash-btn:hover { filter:brightness(1.08); }
-        .wa-tag-dash-btn-ghost { background:rgba(255,255,255,.06); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); }
-        .wa-tag-dash-row { display:flex; gap:6px; flex-wrap:wrap; }
-        .wa-tag-dash-input, .wa-tag-dash-select { background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:5px 7px; font-size:10.5px; outline:none; }
-        .wa-tag-dash-textarea { background:var(--igls-surface-2,#1c1c23); color:var(--igls-text,#ece9e4); border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; padding:6px 7px; font-size:10px; outline:none; font-family:monospace; resize:vertical; width:100%; box-sizing:border-box; }
-        .wa-tag-dash-status { font-size:10px; color:var(--igls-text-dim,#96949c); }
-        .wa-tag-dash-table-wrap { max-height:340px; overflow:auto; border:1px solid var(--igls-border,rgba(255,255,255,.08)); border-radius:6px; }
-        .wa-tag-dash-table { width:100%; border-collapse:collapse; font-size:10.5px; }
-        .wa-tag-dash-table th { position:sticky; top:0; background:var(--igls-surface-2,#1c1c23); color:var(--igls-text-dim,#96949c); text-align:left; padding:6px 8px; cursor:pointer; white-space:nowrap; border-bottom:1px solid var(--igls-border,rgba(255,255,255,.08)); }
-        .wa-tag-dash-table th:hover { color:var(--igls-accent,#c9a876); }
-        .wa-tag-dash-table td { padding:5px 8px; border-bottom:1px solid rgba(255,255,255,.04); color:var(--igls-text,#ece9e4); white-space:nowrap; }
-        .wa-tag-dash-table tr.wa-tag-dash-clickable:hover { background:rgba(255,255,255,.05); cursor:pointer; }
-        .wa-tag-dash-empty { padding:16px; text-align:center; color:var(--igls-text-dim,#96949c); }
-        .wa-tag-dash-divider { border-top:1px solid var(--igls-border,rgba(255,255,255,.08)); margin-top:4px; padding-top:8px; }
-        .wa-tag-dash-import-row { display:flex; flex-direction:column; gap:5px; background:rgba(255,255,255,.03); border:1px solid var(--igls-border,rgba(255,255,255,.06)); border-radius:6px; padding:6px; font-size:10px; }
-        .wa-tag-dash-import-generated { font-family:monospace; font-size:9.5px; word-break:break-word; flex:1; }
-        .wa-tag-dash-import-copybtn { flex-shrink:0; }
-        .wa-tag-dash-subtabs { display:flex; gap:4px; margin-bottom:6px; }
-        .wa-tag-dash-subtab { flex:1; text-align:center; padding:5px 6px; border-radius:6px; font-size:10px; font-weight:700; cursor:pointer; background:rgba(255,255,255,.04); color:var(--igls-text-dim,#96949c); border:1px solid var(--igls-border,rgba(255,255,255,.06)); }
-        .wa-tag-dash-subtab.active { background:var(--igls-accent,#c9a876); color:#171208; }
-        .wa-tag-dash-subpanel { display:none; flex-direction:column; gap:6px; }
-        .wa-tag-dash-subpanel.active { display:flex; }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // ---------------- Sidebar card shell ----------------
-    const wrap = document.createElement('div');
-    wrap.className = 'wa-tag-dash-wrap';
-    wrap.innerHTML = `
-      <div class="wa-tag-dash-row">
-        <button id="wa-tag-dash-scan-btn" class="wa-tag-dash-btn">🔄 Escanear todos los chats</button>
-      </div>
-      <div class="wa-tag-dash-status" id="wa-tag-dash-status">Sin escanear todavía.</div>
-      <div class="wa-tag-dash-row">
-        <input type="text" id="wa-tag-dash-search" class="wa-tag-dash-input" placeholder="Buscar..." style="flex:1;">
-      </div>
-      <div class="wa-tag-dash-row" id="wa-tag-dash-quickfilters"></div>
-      <div class="wa-tag-dash-table-wrap">
-        <table class="wa-tag-dash-table">
-          <thead id="wa-tag-dash-thead"></thead>
-          <tbody id="wa-tag-dash-tbody"></tbody>
-        </table>
-      </div>
-      <div class="wa-tag-dash-row">
-        <button id="wa-tag-dash-export-csv-btn" class="wa-tag-dash-btn wa-tag-dash-btn-ghost">⬇️ Exportar CSV</button>
-        <button id="wa-tag-dash-export-xlsx-btn" class="wa-tag-dash-btn wa-tag-dash-btn-ghost">⬇️ Exportar Excel (.xlsx)</button>
-      </div>
-
-      <div class="wa-tag-dash-divider">
-        <label class="wa-tag-dash-status" style="display:block; margin-bottom:6px;">Importar datos (genera nombres etiquetados para copiar)</label>
-
-        <div class="wa-tag-dash-subtabs">
-          <div class="wa-tag-dash-subtab active" data-subtab="sheets">Google Sheets</div>
-          <div class="wa-tag-dash-subtab" data-subtab="csv">CSV manual</div>
-        </div>
-
-        <div class="wa-tag-dash-subpanel active" id="wa-tag-dash-subpanel-sheets">
-          <div class="wa-tag-dash-row">
-            <input type="text" id="wa-tag-dash-sheet-url" class="wa-tag-dash-input" placeholder="https://docs.google.com/spreadsheets/d/..." style="flex:1;">
-            <button id="wa-tag-dash-sheet-fetch-btn" class="wa-tag-dash-btn">Importar</button>
-          </div>
-        </div>
-
-        <div class="wa-tag-dash-subpanel" id="wa-tag-dash-subpanel-csv">
-          <div class="wa-tag-dash-row">
-            <input type="file" id="wa-tag-dash-csv-file" accept=".csv,text/csv" style="flex:1; font-size:10px;">
-          </div>
-          <textarea id="wa-tag-dash-csv-paste" class="wa-tag-dash-textarea" rows="4" placeholder="...o pega aquí el contenido CSV (primera fila = encabezados: Nombre, Curso, Generación, ...)"></textarea>
-          <div class="wa-tag-dash-row">
-            <button id="wa-tag-dash-csv-import-btn" class="wa-tag-dash-btn">Importar CSV</button>
-          </div>
-        </div>
-
-        <div class="wa-tag-dash-status" id="wa-tag-dash-import-status" style="margin-top:6px;">El encabezado debe usar las mismas etiquetas de tus campos (Nombre, Curso, Generación...).</div>
-        <div id="wa-tag-dash-import-results" style="display:flex; flex-direction:column; gap:5px; margin-top:6px; max-height:240px; overflow:auto;"></div>
-        <div class="wa-tag-dash-row" id="wa-tag-dash-import-copyall-row" style="display:none; margin-top:4px;">
-          <button id="wa-tag-dash-import-copyall-btn" class="wa-tag-dash-btn wa-tag-dash-btn-ghost">📋 Copiar todos los nombres generados</button>
-        </div>
-      </div>
-    `;
-
-    const statusEl = () => wrap.querySelector('#wa-tag-dash-status');
-    const importStatusEl = () => wrap.querySelector('#wa-tag-dash-import-status');
-
-    // ---------------- Import sub-tabs (Google Sheets / CSV manual) ----------------
-    wrap.querySelectorAll('.wa-tag-dash-subtab').forEach(tab => {
-      tab.onclick = () => {
-        wrap.querySelectorAll('.wa-tag-dash-subtab').forEach(t => t.classList.remove('active'));
-        wrap.querySelectorAll('.wa-tag-dash-subpanel').forEach(p => p.classList.remove('active'));
-        tab.classList.add('active');
-        wrap.querySelector(`#wa-tag-dash-subpanel-${tab.dataset.subtab}`).classList.add('active');
-      };
+      config.tags = newTags;
+      config.folders = newFolders;
+      config.numbers = numbers;
+      config.others = others;
+      save();
+      renderPanel();
+      setStatus(`✅ ${newTags.length} etiqueta(s) importadas.`);
     });
 
-    // ---------------- Scan (auto-scroll + collect) ----------------
-    async function collectAllTaggedContacts() {
-      const scrollContainer = document.querySelector(SCROLL_CONTAINER_SELECTOR);
-      if (!scrollContainer) return [];
+    // ---------------- Export tagged contacts ----------------
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+    async function collectTaggedContacts() {
+      const scroller = document.querySelector(SCROLL_CONTAINER_SELECTOR);
+      if (!scroller) return null;
       const collected = new Map();
-      scrollContainer.scrollTop = 0;
+      scroller.scrollTop = 0;
       await sleep(200);
 
-      let lastScrollTop = -1;
-      let stableRounds = 0;
-      let safetyCounter = 0;
-
-      while (stableRounds < 3 && safetyCounter < 400) {
-        document.querySelectorAll(ROW_SELECTOR).forEach(row => {
-          const nameEl = row.querySelector(NAME_SELECTOR);
-          if (!nameEl) return;
-          const rawName = nameEl.getAttribute('title') || nameEl.textContent || '';
-          if (rawName.includes('[') && !collected.has(rawName)) {
-            collected.set(rawName, parseFullName(rawName));
+      let last = -1, stable = 0, safety = 0;
+      while (stable < 3 && safety < 400) {
+        getNameSpans().forEach(span => {
+          const raw = span.getAttribute('title') || '';
+          if (!collected.has(raw)) {
+            const parsed = parseName(raw);
+            if (parsed.tags.length) collected.set(raw, parsed);
           }
         });
-
-        scrollContainer.scrollTop += Math.max(scrollContainer.clientHeight * 0.8, 200);
+        scroller.scrollTop += Math.max(scroller.clientHeight * 0.8, 200);
         await sleep(220);
-
-        if (scrollContainer.scrollTop === lastScrollTop) stableRounds++;
-        else stableRounds = 0;
-        lastScrollTop = scrollContainer.scrollTop;
-        safetyCounter++;
+        if (scroller.scrollTop === last) stable++; else stable = 0;
+        last = scroller.scrollTop;
+        safety++;
       }
-
-      scrollContainer.scrollTop = 0;
-
-      return Array.from(collected.entries()).map(([rawName, parsed]) => ({
-        rawName,
-        baseName: parsed.baseName,
-        values: parsed.found.reduce((acc, t) => { acc[t.key] = t.value; return acc; }, {})
-      }));
+      scroller.scrollTop = 0;
+      return Array.from(collected.entries()).map(([raw, p]) => ({ raw, base: p.base, tags: p.tags }));
     }
 
-    wrap.querySelector('#wa-tag-dash-scan-btn').onclick = async () => {
-      const btn = wrap.querySelector('#wa-tag-dash-scan-btn');
+    $('#wa-tg-export-contacts').onclick = async () => {
+      const btn = $('#wa-tg-export-contacts');
       btn.disabled = true;
-      btn.textContent = '⏳ Escaneando...';
-      statusEl().textContent = 'Recorriendo la lista de chats, no la desplaces manualmente...';
+      btn.textContent = '⏳ Recorriendo chats...';
+      setStatus('No desplaces la lista de chats mientras termina.', true);
       try {
-        allContacts = await collectAllTaggedContacts();
-        applyFiltersAndRender();
+        const contacts = await collectTaggedContacts();
+        if (contacts === null) { setStatus('No se encontró la lista de chats.'); return; }
+        if (!contacts.length) { setStatus('No se encontraron contactos con etiquetas.'); return; }
+
+        const header = ['Nombre', 'Etiquetas', ...config.tags.map(t => t.name), 'Nombre completo'];
+        const rows = [header];
+        contacts.forEach(c => {
+          const lower = c.tags.map(norm);
+          rows.push([
+            c.base,
+            c.tags.join(', '),
+            ...config.tags.map(t => lower.includes(norm(t.name)) ? '✓' : ''),
+            c.raw
+          ]);
+        });
+        const fmt = downloadSheet(rows, 'Contactos', 'contactos_etiquetados');
+        setStatus(`✅ ${contacts.length} contacto(s) exportados en ${fmt}.`);
       } finally {
         btn.disabled = false;
-        btn.textContent = '🔄 Escanear todos los chats';
+        btn.textContent = '⬇️ Exportar contactos etiquetados';
       }
     };
 
-    // ---------------- Filtering / sorting ----------------
-    function applyFiltersAndRender() {
-      const fields = getFields();
-      let rows = allContacts;
-
-      if (searchTerm.trim()) {
-        const term = searchTerm.trim().toLowerCase();
-        rows = rows.filter(c => {
-          if ((c.baseName || '').toLowerCase().includes(term)) return true;
-          return Object.values(c.values).some(v => (v || '').toLowerCase().includes(term));
-        });
+    // ---------------- Mount ----------------
+    function mountCard(attemptsLeft) {
+      attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
+      if (typeof core.registerMenu === 'function') {
+        injectStyles();
+        core.registerMenu('left', '🏷️ Etiquetas', wrap, '⠿', 'simple-tags');
+        renderPanel();
+      } else if (attemptsLeft > 0) {
+        setTimeout(() => mountCard(attemptsLeft - 1), 200);
       }
-
-      Object.keys(quickFilters).forEach(key => {
-        const val = quickFilters[key];
-        if (val) rows = rows.filter(c => c.values[key] === val);
-      });
-
-      if (sortState.key) {
-        const field = fields.find(f => f.key === sortState.key);
-        rows = rows.slice().sort((a, b) => {
-          const av = sortState.key === '__base__' ? (a.baseName || '') : (a.values[sortState.key] || '');
-          const bv = sortState.key === '__base__' ? (b.baseName || '') : (b.values[sortState.key] || '');
-          let cmp;
-          if (field && field.inputType === 'number') cmp = (parseFloat(av) || 0) - (parseFloat(bv) || 0);
-          else if (field && field.inputType === 'date') cmp = new Date(av) - new Date(bv);
-          else cmp = String(av).localeCompare(String(bv));
-          return cmp * sortState.dir;
-        });
-      }
-
-      filtered = rows;
-      renderQuickFilters(fields);
-      renderTable(fields);
-      statusEl().textContent = `${allContacts.length} contactos etiquetados encontrados · mostrando ${filtered.length}`;
     }
+    mountCard();
 
-    function renderQuickFilters(fields) {
-      const container = wrap.querySelector('#wa-tag-dash-quickfilters');
-      container.innerHTML = '';
-      fields.filter(f => f.inputType === 'select').forEach(f => {
-        const sel = document.createElement('select');
-        sel.className = 'wa-tag-dash-select';
-        sel.innerHTML = `<option value="">${f.label}: todos</option>` +
-          (f.options || []).map(o => `<option value="${o}" ${quickFilters[f.key] === o ? 'selected' : ''}>${o}</option>`).join('');
-        sel.onchange = () => { quickFilters[f.key] = sel.value; applyFiltersAndRender(); };
-        container.appendChild(sel);
-      });
+    core.emit('block:ready', { id: 'simpleTagsPlugin' });
+  }
+});
+
+/* ============================================================
+   BLOCK: Video Sender (v4)
+   ============================================================ */
+LegoCore.registerBlock({
+  id: 'videoLibraryModule',
+  init(core) {
+    // ================= CONFIG =================
+    const DATA_KEY = 'wa_video_library_v1';
+    const METHOD_KEY = 'wa_vlc_attach_method';   // remembers which attach method works on your WhatsApp
+    // Videos live in their OWN IndexedDB database, never in the shared "images" store,
+    // so nothing else in the toolkit (sync, backups, image loaders) ever reads them.
+    const VIDEO_DB_NAME = 'wa_video_library_db';
+    const VIDEO_STORE = 'videos';
+    const LEGACY_STORE = 'images';               // where v1 of this block put videos — migrated out on load
+
+    const WARN_SIZE_MB = 100;  // ask before saving videos bigger than this (just a confirm, you can still save)
+    const MAX_SIZE_MB = 180;   // matches what WhatsApp Web accepts for you; change freely
+    const SENT_TIMEOUT_MS = 120000;
+
+    // WhatsApp Web selectors — verify in DevTools if something stops working.
+    const SEL = {
+      attachBtn: [
+        '[data-icon="plus-rounded"]', '[data-icon="plus"]', '[data-icon="attach-menu-plus"]', '[data-icon="clip"]',
+        '[aria-label="Attach"]', '[aria-label="Adjuntar"]', '[title="Attach"]', '[title="Adjuntar"]'
+      ],
+      sendBtn: [
+        '[data-icon="wds-ic-send-filled"]', '[data-icon="send"]',
+        '[aria-label="Send"]', '[aria-label="Enviar"]'
+      ]
+    };
+
+    // ================= HELPERS =================
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const notify = (msg) => { if (core.notifyError) core.notifyError(msg); else console.warn('[videoLib]', msg); };
+    const isVisible = (el) => !!el && el.isConnected && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';
+    // Toolkit UI only. WhatsApp itself renders its menus/popovers inside #wa-popovers-bucket,
+    // which also starts with "wa-" — that must NOT count as ours, or the attach menu/preview gets ignored.
+    const isOurUI = (el) => {
+      if (!el) return false;
+      if (el.closest('#wa-popovers-bucket')) return false;
+      return !!el.closest('.wa-tln-container, .wa-tlp-modal-overlay, [class^="wa-"], [id^="wa-"]');
+    };
+    const log = (...a) => console.log('[videoLib]', ...a);
+    const clickable = (el) => el.closest('button, [role="button"]') || el;
+    const fmtDur = (s) => { if (!s || !isFinite(s)) return ''; s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const fmtMB = (b) => ((b || 0) / 1048576).toFixed(1) + ' MB';
+    async function waitUntil(fn, timeout, step = 250) {
+      const t0 = Date.now();
+      while (Date.now() - t0 < timeout) { if (fn()) return true; await sleep(step); }
+      return false;
     }
-
-    function renderTable(fields) {
-      const thead = wrap.querySelector('#wa-tag-dash-thead');
-      const tbody = wrap.querySelector('#wa-tag-dash-tbody');
-
-      const sortArrow = key => sortState.key === key ? (sortState.dir === 1 ? ' ▲' : ' ▼') : '';
-      thead.innerHTML = `<tr>
-        <th data-sort-key="__base__">Nombre${sortArrow('__base__')}</th>
-        ${fields.map(f => `<th data-sort-key="${f.key}">${f.label}${sortArrow(f.key)}</th>`).join('')}
-      </tr>`;
-      thead.querySelectorAll('th').forEach(th => {
-        th.onclick = () => {
-          const key = th.dataset.sortKey;
-          if (sortState.key === key) sortState.dir *= -1;
-          else { sortState.key = key; sortState.dir = 1; }
-          applyFiltersAndRender();
-        };
-      });
-
-      tbody.innerHTML = '';
-      if (!filtered.length) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="${fields.length + 1}" class="wa-tag-dash-empty">Sin resultados. Ejecuta un escaneo o ajusta los filtros.</td>`;
-        tbody.appendChild(tr);
-        return;
-      }
-      filtered.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.className = 'wa-tag-dash-clickable';
-        tr.innerHTML = `<td>${c.baseName || ''}</td>` + fields.map(f => `<td>${c.values[f.key] || ''}</td>`).join('');
-        tr.onclick = () => jumpToChat(c.rawName);
-        tbody.appendChild(tr);
-      });
-    }
-
-    wrap.querySelector('#wa-tag-dash-search').addEventListener('input', e => {
-      searchTerm = e.target.value;
-      applyFiltersAndRender();
-    });
-
-    // ---------------- Jump to chat ----------------
-    function findRowByRawName(rawName) {
-      const rows = document.querySelectorAll(ROW_SELECTOR);
-      for (const row of rows) {
-        const nameEl = row.querySelector(NAME_SELECTOR);
-        if (nameEl && (nameEl.getAttribute('title') || nameEl.textContent) === rawName) return row;
+    function qVisible(list, filter = () => true) {
+      for (const s of list) {
+        const el = [...document.querySelectorAll(s)].find(e => isVisible(e) && filter(e));
+        if (el) return el;
       }
       return null;
     }
 
-    async function jumpToChat(rawName) {
-      let target = findRowByRawName(rawName);
-      if (target) { target.click(); return; }
+    const PLACEHOLDER_THUMB = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="120"><rect width="100%" height="100%" fill="#1f2937"/>' +
+      '<text x="50%" y="55%" font-size="40" text-anchor="middle" dominant-baseline="middle">🎬</text></svg>'
+    );
 
-      const scrollContainer = document.querySelector(SCROLL_CONTAINER_SELECTOR);
-      if (!scrollContainer) { alert('No se encontró la lista de chats.'); return; }
-      scrollContainer.scrollTop = 0;
-      let attempts = 0;
-      while (!target && attempts < 80) {
-        target = findRowByRawName(rawName);
-        if (target) break;
-        scrollContainer.scrollTop += Math.max(scrollContainer.clientHeight * 0.8, 200);
-        await sleep(150);
-        attempts++;
-      }
-      if (target) target.click();
-      else alert('No se encontró el chat (puede haberse renombrado, archivado o eliminado).');
+    // ================= STYLES =================
+    if (!document.getElementById('wa-vlc-styles')) {
+      const style = document.createElement('style');
+      style.id = 'wa-vlc-styles';
+      style.textContent = `
+        .wa-vlc-thumb-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+        .wa-vlc-play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+          font-size: 12px; color: #fff; text-shadow: 0 0 3px #000; pointer-events: none; }
+        .wa-vlc-dur { position: absolute; right: 1px; bottom: 1px; font-size: 9px; line-height: 1; padding: 1px 3px;
+          border-radius: 3px; background: rgba(0,0,0,.7); color: #fff; pointer-events: none; }
+      `;
+      document.head.appendChild(style);
     }
 
-    // ---------------- CSV export ----------------
-    function toCsvValue(v) {
-      const s = String(v == null ? '' : v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    // ================= DATA =================
+    let libraryData;
+    try { libraryData = JSON.parse(localStorage.getItem(DATA_KEY)) || { items: [] }; }
+    catch (e) { libraryData = { items: [] }; }
+    function saveData() { localStorage.setItem(DATA_KEY, JSON.stringify(libraryData)); core.emit('vidlib:changed', libraryData); }
+
+    let activeFolderFilter = 'All';
+    let draggedItem = null;
+
+    core.getVideoLibrary = () => libraryData;
+
+    // ================= OWN INDEXEDDB =================
+    let dbPromise = null;
+    function openVideoDb() {
+      if (!dbPromise) {
+        dbPromise = new Promise((resolve, reject) => {
+          const req = indexedDB.open(VIDEO_DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(VIDEO_STORE)) db.createObjectStore(VIDEO_STORE, { keyPath: 'id' });
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => { dbPromise = null; reject(req.error); };
+        });
+      }
+      return dbPromise;
     }
-
-    wrap.querySelector('#wa-tag-dash-export-csv-btn').onclick = () => {
-      if (!filtered.length) { alert('No hay contactos para exportar. Escanea primero.'); return; }
-      const fields = getFields();
-      const header = ['Nombre', ...fields.map(f => f.label)];
-      const lines = [header.map(toCsvValue).join(',')];
-      filtered.forEach(c => {
-        const row = [c.baseName || '', ...fields.map(f => c.values[f.key] || '')];
-        lines.push(row.map(toCsvValue).join(','));
+    async function saveBlobToDb(id, blob) {
+      const db = await openVideoDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([VIDEO_STORE], 'readwrite');
+        tx.objectStore(VIDEO_STORE).put({ id, blob });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('Write failed'));
+        tx.onabort = () => reject(tx.error || new Error('Write aborted (storage full?)'));
       });
-      const csv = lines.join('\n');
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `contactos_etiquetados_${new Date().toISOString().slice(0, 10)}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    };
-
-    // ---------------- Excel (.xlsx) export ----------------
-    wrap.querySelector('#wa-tag-dash-export-xlsx-btn').onclick = () => {
-      if (typeof XLSX === 'undefined') {
-        alert('Falta la librería XLSX. Agrega esta línea al encabezado de tu script de Tampermonkey:\n\n// @require https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js\n\nLuego recarga WhatsApp Web.');
-        return;
-      }
-      if (!filtered.length) { alert('No hay contactos para exportar. Escanea primero.'); return; }
-      const fields = getFields();
-      const rows = filtered.map(c => {
-        const row = { Nombre: c.baseName || '' };
-        fields.forEach(f => { row[f.label] = c.values[f.key] || ''; });
-        return row;
-      });
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Contactos');
-      XLSX.writeFile(wb, `contactos_etiquetados_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    };
-
-    // ---------------- Shared CSV parsing ----------------
-    function parseCsv(text) {
-      const rows = [];
-      let row = [], field = '', inQuotes = false;
-      for (let i = 0; i < text.length; i++) {
-        const c = text[i];
-        if (inQuotes) {
-          if (c === '"') {
-            if (text[i + 1] === '"') { field += '"'; i++; }
-            else inQuotes = false;
-          } else field += c;
-        } else {
-          if (c === '"') inQuotes = true;
-          else if (c === ',') { row.push(field); field = ''; }
-          else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-          else if (c === '\r') { /* skip */ }
-          else field += c;
-        }
-      }
-      if (field.length || row.length) { row.push(field); rows.push(row); }
-      return rows.filter(r => r.some(cell => cell.trim() !== ''));
     }
+    async function deleteBlobFromDb(id) {
+      try {
+        const db = await openVideoDb();
+        db.transaction([VIDEO_STORE], 'readwrite').objectStore(VIDEO_STORE).delete(id);
+      } catch (e) { console.error('[videoLib]', e); }
+    }
+    async function getVideoBlob(id) {
+      try {
+        const db = await openVideoDb();
+        return await new Promise((resolve) => {
+          const req = db.transaction([VIDEO_STORE], 'readonly').objectStore(VIDEO_STORE).get(id);
+          req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (e) { return null; }
+    }
+    core.getSavedVideoBlob = getVideoBlob;
 
-    // Shared by BOTH the Google Sheets import and the manual CSV import.
-    // Takes raw CSV text, matches header row to configured field labels,
-    // fills importedRows + renders the results/copy UI. Returns true on success.
-    function processImportedCsvText(csvText, sourceLabel) {
-      const resultsEl = wrap.querySelector('#wa-tag-dash-import-results');
-      const copyAllRow = wrap.querySelector('#wa-tag-dash-import-copyall-row');
-      resultsEl.innerHTML = '';
-      copyAllRow.style.display = 'none';
-      importedRows = [];
+    // ================= ONE-TIME MIGRATION OUT OF THE SHARED "images" STORE =================
+    // v1 of this block stored videos next to your images. Move them into the video DB,
+    // then delete every leftover "vid_" record there (keys only — no video data is loaded to find them).
+    async function migrateFromSharedStore(attemptsLeft = 15) {
+      const coreDb = core.getDb && core.getDb();
+      if (!coreDb) { if (attemptsLeft > 0) setTimeout(() => migrateFromSharedStore(attemptsLeft - 1), 400); return; }
+      if (!coreDb.objectStoreNames.contains(LEGACY_STORE)) return;
 
-      const rows = parseCsv(csvText);
-      if (rows.length < 2) { importStatusEl().textContent = `${sourceLabel}: no se encontraron filas de datos.`; return false; }
-
-      const header = rows[0].map(h => h.trim().toLowerCase());
-      const fields = getFields();
-      const nameColIdx = header.findIndex(h => h === 'nombre' || h === 'name');
-      if (nameColIdx === -1) {
-        importStatusEl().textContent = `${sourceLabel}: falta una columna "Nombre".`;
-        return false;
-      }
-      const fieldColIdx = {};
-      fields.forEach(f => {
-        const idx = header.findIndex(h => h === f.label.trim().toLowerCase());
-        if (idx !== -1) fieldColIdx[f.key] = idx;
+      const legacyKeys = await new Promise((resolve) => {
+        const keys = [];
+        try {
+          const req = coreDb.transaction([LEGACY_STORE], 'readonly').objectStore(LEGACY_STORE).openKeyCursor();
+          req.onsuccess = () => {
+            const cur = req.result;
+            if (!cur) return resolve(keys);
+            if (typeof cur.key === 'string' && cur.key.startsWith('vid_')) keys.push(cur.key);
+            cur.continue();
+          };
+          req.onerror = () => resolve(keys);
+        } catch (e) { resolve(keys); }
       });
+      if (!legacyKeys.length) return;
 
-      for (let i = 1; i < rows.length; i++) {
-        const r = rows[i];
-        const baseName = (r[nameColIdx] || '').trim();
-        if (!baseName) continue;
-        const values = {};
-        fields.forEach(f => {
-          if (fieldColIdx[f.key] !== undefined) {
-            const v = (r[fieldColIdx[f.key]] || '').trim();
-            if (v) values[f.key] = v;
+      const known = new Set(libraryData.items.filter(i => i.type === 'video').map(i => i.id));
+      for (const id of legacyKeys) {
+        if (known.has(id)) {
+          const rec = await new Promise((resolve) => {
+            try {
+              const r = coreDb.transaction([LEGACY_STORE], 'readonly').objectStore(LEGACY_STORE).get(id);
+              r.onsuccess = () => resolve(r.result || null);
+              r.onerror = () => resolve(null);
+            } catch (e) { resolve(null); }
+          });
+          if (rec && rec.blob) {
+            try { await saveBlobToDb(id, rec.blob); }
+            catch (e) { console.error('[videoLib] migration failed for', id, e); continue; } // keep original if copy failed
           }
-        });
-        const generated = buildFullName(baseName, values, fields);
-        importedRows.push({ baseName, values, generated });
-      }
-
-      if (!importedRows.length) {
-        importStatusEl().textContent = `${sourceLabel}: no se encontraron filas válidas (revisa la columna Nombre).`;
-        return false;
-      }
-
-      importStatusEl().textContent = `${sourceLabel}: ${importedRows.length} filas listas. Copia cada nombre generado y pégalo en el contacto correspondiente en tu teléfono.`;
-      renderImportResults();
-      copyAllRow.style.display = '';
-      return true;
-    }
-
-    // ---------------- Google Sheets import (bulk name generator) ----------------
-    function extractSheetExportUrl(shareUrl) {
-      const idMatch = shareUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
-      if (!idMatch) return null;
-      const id = idMatch[1];
-      const gidMatch = shareUrl.match(/gid=([0-9]+)/);
-      const gid = gidMatch ? gidMatch[1] : '0';
-      return `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;
-    }
-
-    function fetchGoogleSheetCsv(url) {
-      return new Promise((resolve, reject) => {
-        if (typeof GM_xmlhttpRequest === 'undefined') {
-          reject(new Error('Falta GM_xmlhttpRequest. Agrega // @grant GM_xmlhttpRequest y // @connect docs.google.com al encabezado del script.'));
-          return;
         }
-        GM_xmlhttpRequest({
-          method: 'GET',
-          url,
-          onload: res => {
-            if (res.status >= 200 && res.status < 300) resolve(res.responseText);
-            else reject(new Error('Error al descargar la hoja (código ' + res.status + '). ¿Está compartida como "cualquiera con el link puede ver"?'));
-          },
-          onerror: () => reject(new Error('Error de red al descargar la hoja.'))
-        });
-      });
+        try { coreDb.transaction([LEGACY_STORE], 'readwrite').objectStore(LEGACY_STORE).delete(id); } catch (e) {}
+      }
+      console.info(`[videoLib] moved ${legacyKeys.length} video record(s) out of the shared images store`);
     }
 
-    wrap.querySelector('#wa-tag-dash-sheet-fetch-btn').onclick = async () => {
-      const url = wrap.querySelector('#wa-tag-dash-sheet-url').value.trim();
-      if (!url) { importStatusEl().textContent = 'Pega primero un link de Google Sheets.'; return; }
-      const exportUrl = extractSheetExportUrl(url);
-      if (!exportUrl) { importStatusEl().textContent = 'No se pudo leer el ID de la hoja en ese link.'; return; }
-
-      importStatusEl().textContent = 'Descargando hoja...';
-      let csvText;
-      try {
-        csvText = await fetchGoogleSheetCsv(exportUrl);
-      } catch (err) {
-        importStatusEl().textContent = err.message;
-        return;
-      }
-
-      processImportedCsvText(csvText, 'Google Sheets');
-    };
-
-    // ---------------- Manual CSV import (upload file or paste text) ----------------
-    function readFileAsText(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('No se pudo leer el archivo.'));
-        reader.readAsText(file, 'utf-8');
-      });
-    }
-
-    // Uploading a file auto-fills the paste box (handy to double check) but
-    // does NOT auto-import -- the user still clicks "Importar CSV".
-    wrap.querySelector('#wa-tag-dash-csv-file').addEventListener('change', async (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      try {
-        const text = await readFileAsText(file);
-        wrap.querySelector('#wa-tag-dash-csv-paste').value = text;
-        importStatusEl().textContent = `Archivo "${file.name}" cargado. Revisa el texto y presiona "Importar CSV".`;
-      } catch (err) {
-        importStatusEl().textContent = err.message;
-      }
-    });
-
-    wrap.querySelector('#wa-tag-dash-csv-import-btn').onclick = () => {
-      const csvText = wrap.querySelector('#wa-tag-dash-csv-paste').value;
-      if (!csvText || !csvText.trim()) {
-        importStatusEl().textContent = 'Sube un archivo .csv o pega el contenido CSV primero.';
-        return;
-      }
-      processImportedCsvText(csvText, 'CSV manual');
-    };
-
-    // ---------------- Import results rendering (shared) ----------------
-    function renderImportResults() {
-      const resultsEl = wrap.querySelector('#wa-tag-dash-import-results');
-      resultsEl.innerHTML = '';
-      importedRows.forEach((row, idx) => {
-        const item = document.createElement('div');
-        item.className = 'wa-tag-dash-import-row';
-        item.innerHTML = `
-          <div class="wa-tag-dash-import-generated">${row.generated}</div>
-          <button class="wa-tag-dash-btn wa-tag-dash-btn-ghost wa-tag-dash-import-copybtn" data-idx="${idx}">📋 Copiar</button>
-        `;
-        resultsEl.appendChild(item);
-      });
-      resultsEl.querySelectorAll('.wa-tag-dash-import-copybtn').forEach(btn => {
-        btn.onclick = () => {
-          const text = importedRows[Number(btn.dataset.idx)].generated;
-          copyText(text, () => { btn.textContent = '✅ Copiado'; setTimeout(() => { btn.textContent = '📋 Copiar'; }, 1000); });
+    // ================= THUMBNAIL =================
+    function makeVideoThumb(file, maxSize = 200, quality = 0.7) {
+      return new Promise((resolve) => {
+        const url = URL.createObjectURL(file);
+        const v = document.createElement('video');
+        v.muted = true; v.playsInline = true; v.preload = 'metadata'; // only what's needed for one frame
+        let done = false;
+        const finish = (thumbnail) => {
+          if (done) return; done = true;
+          const duration = isFinite(v.duration) ? v.duration : 0;
+          v.removeAttribute('src'); v.load();
+          URL.revokeObjectURL(url);
+          resolve({ thumbnail, duration });
         };
+        v.onloadedmetadata = () => {
+          const t = isFinite(v.duration) ? Math.min(0.5, v.duration / 2) : 0;
+          v.currentTime = t;
+        };
+        v.onseeked = () => {
+          try {
+            let w = v.videoWidth, h = v.videoHeight;
+            if (!w || !h) return finish(PLACEHOLDER_THUMB);
+            const ratio = Math.min(1, maxSize / w, maxSize / h);
+            w = Math.round(w * ratio); h = Math.round(h * ratio);
+            const canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(v, 0, 0, w, h);
+            const data = canvas.toDataURL('image/jpeg', quality);
+            canvas.width = canvas.height = 0; // release the bitmap
+            finish(data);
+          } catch (e) { finish(PLACEHOLDER_THUMB); }
+        };
+        v.onerror = () => finish(PLACEHOLDER_THUMB);
+        setTimeout(() => finish(PLACEHOLDER_THUMB), 8000);
+        v.src = url;
       });
     }
 
-    wrap.querySelector('#wa-tag-dash-import-copyall-btn').onclick = () => {
-      const text = importedRows.map(r => r.generated).join('\n');
-      copyText(text, () => {
-        const btn = wrap.querySelector('#wa-tag-dash-import-copyall-btn');
-        const original = btn.textContent;
-        btn.textContent = '✅ Copiado';
-        setTimeout(() => { btn.textContent = original; }, 1200);
-      });
-    };
+    // ================= SEND TO WHATSAPP =================
+    const visibleEditables = () => new Set([...document.querySelectorAll('[contenteditable="true"]')].filter(isVisible));
+    const visibleSendBtns = () => new Set(SEL.sendBtn.flatMap(s => [...document.querySelectorAll(s)]).filter(isVisible));
 
-    function copyText(text, cb) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(cb).catch(() => fallbackCopy(text, cb));
-      } else {
-        fallbackCopy(text, cb);
+    function findPreviewSendBtn() {
+      return qVisible(SEL.sendBtn, e => !e.closest('#main footer') && !isOurUI(e));
+    }
+
+    // The preview counts as open when a NEW caption box or a NEW send button (outside the chat footer) appears.
+    async function waitForPreview(beforeEdit, beforeSend, timeout) {
+      const t0 = Date.now();
+      let sendSeenAt = 0;
+      while (Date.now() - t0 < timeout) {
+        const fresh = [...document.querySelectorAll('[contenteditable="true"]')]
+          .find(el => isVisible(el) && !beforeEdit.has(el) && !el.closest('#main footer') && !isOurUI(el));
+        if (fresh) return { opened: true, captionEl: fresh };
+        const btn = findPreviewSendBtn();
+        if (btn && !beforeSend.has(btn)) {
+          if (!sendSeenAt) sendSeenAt = Date.now();
+          else if (Date.now() - sendSeenAt > 800) return { opened: true, captionEl: null };
+        }
+        await sleep(200);
+      }
+      return { opened: false, captionEl: null };
+    }
+
+    function makeDataTransfer(file) {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      return dt;
+    }
+
+    // Method "paste": paste the file into the chat's message box (same as Ctrl+V of a copied video).
+    function findComposer() {
+      return qVisible([
+        '#main footer [contenteditable="true"][role="textbox"]',
+        '#main footer [contenteditable="true"]',
+        'footer [contenteditable="true"]'
+      ], e => !isOurUI(e));
+    }
+    async function tryPaste(file) {
+      const box = findComposer();
+      if (!box) { log('paste: message box not found'); return null; }
+      box.focus();
+      await sleep(80);
+      const dt = makeDataTransfer(file);
+      let ev;
+      try { ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }); } catch (e) { ev = null; }
+      if (!ev || !ev.clipboardData || !ev.clipboardData.files || !ev.clipboardData.files.length) {
+        // Some browsers ignore clipboardData in the constructor — attach it by hand.
+        ev = new Event('paste', { bubbles: true, cancelable: true });
+        Object.defineProperty(ev, 'clipboardData', { value: dt });
+      }
+      box.dispatchEvent(ev);
+      return () => {};
+    }
+
+    // Method "input": put the file into WhatsApp's own "Photos & videos" file input.
+    // Must skip our own hidden "📤 Upload" input (it also accepts video) — otherwise the
+    // video gets re-saved into the library instead of being handed to WhatsApp.
+    function findVideoInput() {
+      return [...document.querySelectorAll('input[type="file"]')].find(i => /video/.test(i.accept || '') && !isOurUI(i));
+    }
+    async function tryFileInput(file) {
+      let input = findVideoInput();
+      if (!input) {
+        const btn = qVisible(SEL.attachBtn, e => !isOurUI(e));
+        if (!btn) { log('input: attach (+) button not found'); return null; }
+        clickable(btn).click();
+        await waitUntil(() => !!findVideoInput(), 1500, 100);
+        input = findVideoInput();
+      }
+      if (!input) {
+        log('input: no file input that accepts video');
+        pressEscape();
+        return null;
+      }
+      input.files = makeDataTransfer(file).files;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      return () => pressEscape();
+    }
+
+    // Method "drop": fake a drag-and-drop of the file onto the open chat.
+    async function tryDrop(file) {
+      const main = document.querySelector('#main');
+      if (!main) return null;
+      const r = main.getBoundingClientRect();
+      const x = r.left + r.width / 2, y = r.top + r.height / 2;
+      let target = document.elementFromPoint(x, y);
+      if (!target || !main.contains(target)) target = main;
+
+      const dt = makeDataTransfer(file);
+      const fire = (el, type) => el.dispatchEvent(new DragEvent(type, {
+        bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, dataTransfer: dt
+      }));
+
+      fire(target, 'dragenter');
+      fire(target, 'dragover');
+      await sleep(250);
+      let dropEl = document.elementFromPoint(x, y) || target;
+      if (isOurUI(dropEl)) dropEl = target;
+      fire(dropEl, 'dragenter');
+      fire(dropEl, 'dragover');
+      fire(dropEl, 'drop');
+
+      return () => { try { fire(dropEl, 'dragleave'); fire(target, 'dragleave'); } catch (e) {} };
+    }
+
+    function pressEscape() {
+      const opts = { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true };
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', opts));
+    }
+
+    const METHODS = { paste: tryPaste, input: tryFileInput, drop: tryDrop };
+    const METHOD_ORDER = ['paste', 'input', 'drop'];
+
+    async function insertCaption(captionEl, text) {
+      if (captionEl) {
+        captionEl.focus();
+        await sleep(60);
+        document.execCommand('insertText', false, text);
+        await sleep(60);
+        if ((captionEl.textContent || '').includes(text.slice(0, 12))) return true;
+      }
+      try { await navigator.clipboard.writeText(text); notify('Caption copied — paste it into the caption box.'); }
+      catch (e) { notify('Could not add the caption automatically.'); }
+      return false;
+    }
+
+    let busy = false;
+    /**
+     * Attach a File to the open chat through WhatsApp's media preview.
+     * Tries the method that worked last time first, then the others — but only moves on
+     * when the previous one clearly did nothing (no preview, re-checked before each try),
+     * so the same video is never attached twice.
+     * opts: { caption, autoSend, waitForSent }  →  { ok, method, sent, reason? }
+     */
+    async function sendMediaFile(file, opts = {}) {
+      const { caption = '', autoSend = false, waitForSent = autoSend } = opts;
+      if (busy) return { ok: false, reason: 'busy' };
+      if (!document.querySelector('#main')) { notify('Open a chat first.'); return { ok: false, reason: 'no-chat' }; }
+      if (file.size > MAX_SIZE_MB * 1048576) { notify(`Video is over ${MAX_SIZE_MB} MB — not sending.`); return { ok: false, reason: 'too-big' }; }
+
+      busy = true;
+      try {
+        const remembered = localStorage.getItem(METHOD_KEY);
+        const order = METHOD_ORDER.includes(remembered) ? [remembered, ...METHOD_ORDER.filter(m => m !== remembered)] : METHOD_ORDER;
+        // WhatsApp shows the preview window quickly even for big files (it processes inside it).
+        const timeout = Math.min(20000, 6000 + (file.size / 1048576) * 150);
+        log(`attaching "${file.name}" (${fmtMB(file.size)}, ${file.type || 'no type'}) — order: ${order.join(' → ')}`);
+
+        let preview = { opened: false, captionEl: null }, used = null;
+        for (const method of order) {
+          const beforeEdit = visibleEditables();
+          const beforeSend = visibleSendBtns();
+          let cleanup = null;
+          try { cleanup = await METHODS[method](file); }
+          catch (err) { log(`${method}: failed —`, err && err.message); pressEscape(); continue; }
+          if (!cleanup) { log(`${method}: not available here, skipping`); continue; }
+          preview = await waitForPreview(beforeEdit, beforeSend, timeout);
+          if (preview.opened) { used = method; break; }
+          log(`${method}: no preview after ${Math.round(timeout / 1000)} s`);
+          cleanup();
+          await sleep(400);
+          // Late preview? Then stop here instead of attaching a second copy.
+          if (findPreviewSendBtn() && !beforeSend.has(findPreviewSendBtn())) { used = method; preview = { opened: true, captionEl: null }; break; }
+        }
+
+        if (!preview.opened) {
+          notify('WhatsApp did not open the video preview. Open the console (F12) and send the [videoLib] lines.');
+          return { ok: false, reason: 'attach-failed' };
+        }
+        log(`preview opened with "${used}"`);
+        localStorage.setItem(METHOD_KEY, used);
+
+        if (caption) await insertCaption(preview.captionEl, caption);
+        if (!autoSend) return { ok: true, method: used, sent: false };
+
+        await sleep(300);
+        const btn = findPreviewSendBtn();
+        if (!btn) { notify('Preview is open, but the send button was not found — press Enter.'); return { ok: true, method: used, sent: false }; }
+        clickable(btn).click();
+        if (!waitForSent) return { ok: true, method: used, sent: true };
+
+        const closed = await waitUntil(
+          () => preview.captionEl ? !isVisible(preview.captionEl) : !findPreviewSendBtn(),
+          SENT_TIMEOUT_MS
+        );
+        return { ok: true, method: used, sent: closed };
+      } catch (err) {
+        log('error', err);
+        notify('Attach failed: ' + err.message);
+        return { ok: false, reason: 'error' };
+      } finally {
+        busy = false;
       }
     }
-    function fallbackCopy(text, cb) {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand('copy'); cb(); } catch (e) { /* ignore */ }
-      document.body.removeChild(ta);
+    if (!core.sendMediaFile) core.sendMediaFile = sendMediaFile;
+
+    /** For sequences: core.sendSavedVideo(id, { autoSend: true, waitForSent: true }) */
+    async function sendSavedVideo(id, opts = {}) {
+      const item = libraryData.items.find(i => i.id === id && i.type === 'video');
+      if (!item) return { ok: false, reason: 'not-found' };
+      const blob = await getVideoBlob(id);
+      if (!blob) { notify('Video file is missing from storage.'); return { ok: false, reason: 'blob-missing' }; }
+      const file = new File([blob], item.fileName || (item.name + '.mp4'), { type: item.mime || blob.type || 'video/mp4' });
+      return sendMediaFile(file, { ...opts, caption: opts.caption ?? item.caption });
+    }
+    core.sendSavedVideo = sendSavedVideo;
+
+    // ================= UI =================
+    const libUI = document.createElement('div');
+    libUI.className = 'wa-tln-container';
+    libUI.innerHTML = `
+      <div class="wa-tln-header-btns">
+        <input type="file" id="wa-vlc-upload-input" accept="video/mp4,video/*" multiple style="display:none;">
+        <button id="wa-vlc-upload-btn" class="wa-tln-hbtn">📤 Upload</button>
+        <button id="wa-vlc-new-fold" class="wa-tln-hbtn">📁 Fold</button>
+      </div>
+      <div id="wa-vlc-tree-root" class="wa-tln-tree"></div>
+    `;
+
+    libUI.querySelector('#wa-vlc-new-fold').onclick = () => {
+      const name = prompt('Folder name:');
+      if (!name || !name.trim()) return;
+      libraryData.items.push({ id: 'vfld_' + Date.now(), type: 'folder', parentId: 'root', name: name.trim(), collapsed: false, order: Date.now() });
+      saveData(); renderTree();
+    };
+
+    const uploadInput = libUI.querySelector('#wa-vlc-upload-input');
+    const uploadBtn = libUI.querySelector('#wa-vlc-upload-btn');
+    uploadBtn.onclick = () => uploadInput.click();
+    uploadInput.onchange = async (e) => {
+      const files = Array.from(e.target.files || []);
+      uploadInput.value = '';
+      if (!files.length) return;
+      const label = uploadBtn.textContent;
+      uploadBtn.disabled = true;
+      let n = 0;
+      for (const file of files) {
+        n++;
+        uploadBtn.textContent = `⏳ ${n}/${files.length}`;
+        if (!file.type.startsWith('video/')) { notify(`Skipped "${file.name}" (not a video).`); continue; }
+        if (file.size > MAX_SIZE_MB * 1048576) { notify(`Skipped "${file.name}" (${fmtMB(file.size)} — limit is ${MAX_SIZE_MB} MB).`); continue; }
+        if (file.size > WARN_SIZE_MB * 1048576 &&
+            !confirm(`"${file.name}" is ${fmtMB(file.size)}. WhatsApp may compress it heavily. Save anyway?`)) continue;
+
+        const id = 'vid_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        const { thumbnail, duration } = await makeVideoThumb(file);
+        try { await saveBlobToDb(id, file); }
+        catch (err) { notify(`Could not save "${file.name}": ${err.message}`); continue; }
+
+        libraryData.items.push({
+          id, type: 'video', parentId: activeFolderFilter === 'All' ? 'root' : activeFolderFilter,
+          name: file.name.replace(/\.[^/.]+$/, ''), fileName: file.name, mime: file.type || 'video/mp4',
+          size: file.size, duration, caption: '', tags: [], thumbnail, order: Date.now()
+        });
+        saveData(); renderTree();
+      }
+      uploadBtn.textContent = label;
+      uploadBtn.disabled = false;
+    };
+
+    async function openVideoEditor(item) {
+      const overlay = document.createElement('div');
+      overlay.className = 'wa-tlp-modal-overlay';
+      overlay.innerHTML = `
+        <div class="wa-tlp-modal">
+          <h3>✏️ Edit Video</h3>
+          <video id="wa-vlp-player" controls playsinline preload="metadata" poster="${item.thumbnail}"
+            style="max-height:200px; max-width:100%; border-radius:6px; align-self:center; background:#000;"></video>
+          <div style="font-size:11px; opacity:.7; text-align:center;">${fmtDur(item.duration) || '—'} · ${fmtMB(item.size)}</div>
+          <input type="text" id="wa-vlp-name" class="wa-tlp-input" placeholder="Name" value="${esc(item.name)}">
+          <textarea id="wa-vlp-caption" class="wa-tlp-input" placeholder="Caption / Link (Optional)"
+            style="margin-top:8px; resize:vertical; min-height:60px; font-family:inherit;">${esc(item.caption)}</textarea>
+          <div class="wa-tlp-row">
+            <button id="wa-vlp-save" class="wa-base-btn">💾 Save</button>
+            <button id="wa-vlp-download" class="wa-hide-btn" style="flex:1;" title="Download to drag into WhatsApp by hand">⬇️</button>
+            <button id="wa-vlp-cancel" class="wa-hide-btn" style="flex:1;">Cancel</button>
+            <button id="wa-vlp-delete" class="wa-hide-btn" style="flex:1; color:#f87171;">Delete</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const player = overlay.querySelector('#wa-vlp-player');
+      let url = null;
+      const close = () => {
+        player.pause(); player.removeAttribute('src'); player.load();
+        if (url) URL.revokeObjectURL(url);
+        overlay.remove();
+      };
+
+      overlay.querySelector('#wa-vlp-cancel').onclick = close;
+      overlay.querySelector('#wa-vlp-download').onclick = () => {
+        if (!url) return;
+        const a = document.createElement('a');
+        a.href = url; a.download = item.fileName || (item.name + '.mp4');
+        document.body.appendChild(a); a.click(); a.remove();
+      };
+      overlay.querySelector('#wa-vlp-delete').onclick = () => {
+        if (!confirm('Delete this video?')) return;
+        libraryData.items = libraryData.items.filter(i => i.id !== item.id);
+        deleteBlobFromDb(item.id);
+        saveData(); renderTree(); close();
+      };
+      overlay.querySelector('#wa-vlp-save').onclick = () => {
+        item.name = overlay.querySelector('#wa-vlp-name').value.trim() || item.name;
+        item.caption = overlay.querySelector('#wa-vlp-caption').value.trim();
+        saveData(); renderTree(); close();
+      };
+
+      const blob = await getVideoBlob(item.id);
+      if (blob && overlay.isConnected) {
+        url = URL.createObjectURL(blob);
+        player.src = url;
+      }
     }
 
-    // ---------------- Mount ----------------
+    // ================= DRAG & DROP (tree reordering) =================
+    const DROP_CLASSES = ['wa-tln-drop-top', 'wa-tln-drop-bottom', 'wa-tln-drop-inside'];
+    function handleDragStart(e, id) { draggedItem = id; e.target.style.opacity = '0.4'; e.dataTransfer.effectAllowed = 'move'; }
+    function handleDragOver(e, targetId, targetType) {
+      e.preventDefault();
+      if (!draggedItem || draggedItem === targetId) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offset = e.clientY - rect.top;
+      e.currentTarget.classList.remove(...DROP_CLASSES);
+      if (targetType === 'folder' && offset > rect.height * 0.25 && offset < rect.height * 0.75) e.currentTarget.classList.add('wa-tln-drop-inside');
+      else if (offset < rect.height / 2) e.currentTarget.classList.add('wa-tln-drop-top');
+      else e.currentTarget.classList.add('wa-tln-drop-bottom');
+    }
+    function handleDrop(e, targetId, targetType) {
+      e.preventDefault();
+      e.currentTarget.classList.remove(...DROP_CLASSES);
+      if (!draggedItem || draggedItem === targetId) return;
+      const dragged = libraryData.items.find(i => i.id === draggedItem);
+      const target = libraryData.items.find(i => i.id === targetId);
+      if (!dragged || !target) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const offset = e.clientY - rect.top;
+      if (targetType === 'folder' && offset > rect.height * 0.25 && offset < rect.height * 0.75) dragged.parentId = target.id;
+      else { dragged.parentId = target.parentId; dragged.order = offset < rect.height / 2 ? target.order - 1 : target.order + 1; }
+      saveData(); renderTree();
+    }
+
+    // ================= TREE =================
+    function renderTree() {
+      const rootContainer = libUI.querySelector('#wa-vlc-tree-root');
+      if (!rootContainer) return;
+      rootContainer.innerHTML = '';
+      let counter = 0;
+
+      function buildNode(parentId, containerElement) {
+        const children = libraryData.items.filter(i => i.parentId === parentId).sort((a, b) => a.order - b.order);
+        children.forEach(item => {
+          const el = document.createElement('div');
+
+          if (item.type === 'folder') {
+            el.className = 'wa-tln-folder-head'; el.draggable = true;
+            el.addEventListener('dragstart', (e) => handleDragStart(e, item.id));
+            el.addEventListener('dragend', (e) => { e.target.style.opacity = '1'; draggedItem = null; });
+            el.addEventListener('dragover', (e) => handleDragOver(e, item.id, 'folder'));
+            el.addEventListener('dragleave', (e) => e.currentTarget.classList.remove(...DROP_CLASSES));
+            el.addEventListener('drop', (e) => handleDrop(e, item.id, 'folder'));
+            el.innerHTML = `<span class="wa-tln-caret ${item.collapsed ? 'collapsed' : ''}">▼</span><span>📁 ${esc(item.name)}</span><button class="wa-tln-btn" style="margin-left:auto;">⚙️</button>`;
+            const contentDiv = document.createElement('div');
+            contentDiv.className = `wa-tln-folder-content ${item.collapsed ? 'collapsed' : ''}`;
+            el.querySelector('.wa-tln-caret').onclick = () => { item.collapsed = !item.collapsed; saveData(); renderTree(); };
+            el.querySelector('.wa-tln-btn').onclick = () => {
+              const action = prompt(`Edit Folder: "${item.name}"\n\nType a new name to rename it.\nType "DELETE" (all caps) to delete it and its contents.`);
+              if (!action) return;
+              if (action === 'DELETE') {
+                const deleteNodeAndChildren = (id) => {
+                  libraryData.items.filter(i => i.parentId === id).forEach(c => {
+                    if (c.type !== 'folder') deleteBlobFromDb(c.id);
+                    deleteNodeAndChildren(c.id);
+                  });
+                  libraryData.items = libraryData.items.filter(i => i.id !== id);
+                };
+                deleteNodeAndChildren(item.id);
+              } else { item.name = action.trim(); }
+              saveData(); renderTree();
+            };
+            containerElement.appendChild(el); containerElement.appendChild(contentDiv);
+            buildNode(item.id, contentDiv);
+            return;
+          }
+
+          counter++;
+          el.className = `wa-tln-item ${counter % 2 === 0 ? 'alt-bg' : ''}`;
+          el.dataset.id = item.id;
+          const captionIndicator = item.caption ? '<span style="font-size:10px; margin-left:4px;" title="Includes caption">📝</span>' : '';
+          const dur = fmtDur(item.duration);
+
+          el.innerHTML = `
+            <div class="wa-tln-row">
+              <span class="wa-tln-drag-grip" draggable="true">⠿</span>
+              <span class="wa-vlc-thumb-wrap">
+                <img class="wa-tln-thumb" src="${item.thumbnail}">
+                <span class="wa-vlc-play">▶</span>
+                ${dur ? `<span class="wa-vlc-dur">${dur}</span>` : ''}
+              </span>
+              <div class="wa-tln-title-col">${esc(item.name)}${captionIndicator}</div>
+              <div class="wa-tln-actions">
+                <button class="wa-tln-btn edit-btn" title="Edit / Delete">✏️</button>
+                <button class="wa-tln-btn send-btn" title="Attach to chat (Shift+click: attach & send)" style="min-width:40px;">📤</button>
+              </div>
+            </div>
+          `;
+
+          const grip = el.querySelector('.wa-tln-drag-grip');
+          grip.addEventListener('dragstart', (e) => handleDragStart(e, item.id));
+          grip.addEventListener('dragend', (e) => { e.target.style.opacity = '1'; draggedItem = null; });
+          el.addEventListener('dragover', (e) => handleDragOver(e, item.id, 'video'));
+          el.addEventListener('dragleave', (e) => e.currentTarget.classList.remove(...DROP_CLASSES));
+          el.addEventListener('drop', (e) => handleDrop(e, item.id, 'video'));
+
+          el.onclick = (e) => { e.stopPropagation(); };
+          el.querySelector('.edit-btn').onclick = (e) => { e.stopPropagation(); openVideoEditor(item); };
+
+          const sendBtn = el.querySelector('.send-btn');
+          sendBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (busy) { notify('Already attaching a video — wait for it to finish.'); return; }
+            const original = sendBtn.innerHTML;
+            sendBtn.innerText = '⏳';
+            const res = await sendSavedVideo(item.id, { autoSend: e.shiftKey });
+            sendBtn.innerText = res.ok ? '✅' : '⚠️';
+            setTimeout(() => { sendBtn.innerHTML = original; }, 1500);
+          };
+
+          containerElement.appendChild(el);
+        });
+      }
+
+      const renderRoot = activeFolderFilter === 'All' ? 'root' : activeFolderFilter;
+      buildNode(renderRoot, rootContainer);
+      core.emit('vl:tree-rendered', libUI);
+    }
+
+    // ================= MOUNT =================
     function mountCard(attemptsLeft) {
       attemptsLeft = attemptsLeft === undefined ? 10 : attemptsLeft;
       if (typeof core.registerMenu === 'function') {
-        injectStyles();
-        core.registerMenu('left', '📊 Panel de Contactos', wrap, '⠿', 'contact-tag-dashboard');
-        applyFiltersAndRender();
+        core.registerMenu('left', '🎬 Saved Videos', libUI, '⠿', 'video-library-module');
+        renderTree();
       } else if (attemptsLeft > 0) {
         setTimeout(() => mountCard(attemptsLeft - 1), 200);
       }
     }
     mountCard();
-
-    core.emit('block:ready', { id: 'contactTagDashboardPlugin' });
+    migrateFromSharedStore();
+    core.emit('block:ready', { id: 'videoLibraryModule' });
   }
 });
 
